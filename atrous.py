@@ -9,10 +9,12 @@ import cv2
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
-tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
-tf.app.flags.DEFINE_float('lr', 0.001, 'learning rate.')
+tf.app.flags.DEFINE_integer('epochs', 1, 'number of times through dataset.')
+tf.app.flags.DEFINE_float('lr', 0.05, 'learning rate.')
 tf.app.flags.DEFINE_bool('atrous', False, 'whether to use atrous conv')
 tf.app.flags.DEFINE_bool('scale', True, 'whether to randomly scale data')
+tf.app.flags.DEFINE_bool('same_params', True, 'whether to use same n of params '
+                         'vs same amount of compute.')
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -61,6 +63,7 @@ def multiscale_atrousconv(x, channels, filter_size=3, n=4, activation_fn=tf.nn.r
     Returns:
         y (tf.Tensor): outputs. [batch, width, height, channels]
     """
+    # it feels weird how we cannot down sample
     shape = x.get_shape().as_list()
     with tf.variable_scope('multi_scale_conv' + scope):
         filters = tf.get_variable(shape=[filter_size, filter_size, shape[-1],
@@ -97,9 +100,12 @@ def main(_):
 
     # what is a fair test? test acc, same init, averaged over a bunch of tests
     # ?? test on different types of data. scaled and not.
+    # maybe the real strength of conv2d is that we can downsample? how can
+    # we compare this?
 
     # channel_sizes = [16, 16, 16, 16]
     channel_sizes = [64, 32]
+    n = 4
 
     with slim.arg_scope([slim.conv2d],
                         activation_fn=tf.nn.relu,
@@ -107,8 +113,11 @@ def main(_):
                         biases_initializer=tf.constant_initializer(0.0)):
         # TODO need BN
         if FLAGS.atrous:
-            fmap = slim.stack(x, multiscale_atrousconv, channel_sizes)
-            # it feels weird how we cannot down sample
+            if FLAGS.same_params:  # same number of params
+                fmap = slim.stack(x, multiscale_atrousconv, channel_sizes)
+            else:  # same amuont of compute
+                fmap = slim.stack(x, multiscale_atrousconv,
+                                  [n*c for c in channel_sizes])
         else:
             fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (1, 1), 'SAME')
                                                 for k in channel_sizes])
@@ -150,7 +159,7 @@ def main(_):
                                 {x: batch_ims, y: batch_labels})
                 # print('\rloss: {}'.format(L), end='', flush=True)
 
-                if step%50==0:
+                if step%500==0:
                     ids = np.random.randint(0, 5000, 50)
                     batch_test_ims = test_ims[ids, ...]
                     batch_test_labels = test_labels[ids]
