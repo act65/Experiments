@@ -4,18 +4,20 @@ import tensorflow.contrib.slim as slim
 from tensorflow.examples.tutorials.mnist import input_data
 from sklearn.utils import shuffle
 import numpy as np
-import cv2
 
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
-tf.app.flags.DEFINE_integer('epochs', 1, 'number of times through dataset.')
-tf.app.flags.DEFINE_float('lr', 0.05, 'learning rate.')
-tf.app.flags.DEFINE_bool('atrous', False, 'whether to use atrous conv')
-tf.app.flags.DEFINE_bool('scale', True, 'whether to randomly scale data')
-tf.app.flags.DEFINE_bool('same_params', True, 'whether to use same n of params '
-                         'vs same amount of compute.')
+tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
+tf.app.flags.DEFINE_float('lr', 0.01, 'learning rate.')
 FLAGS = tf.app.flags.FLAGS
+
+
+# TODO. a couple of ways to do this.
+# - sample layer weights from a larger set of parameters
+# - use the same parameters, just shuffle them at each stage.
+
+# does this sort of idea relate to cecho state nets?
 
 
 def batch(ims, labels, batchsize):
@@ -24,56 +26,6 @@ def batch(ims, labels, batchsize):
     for i in range(len(labels)//batchsize):
         yield (i, ims[i*batchsize:(i+1)*batchsize, ...],
                labels[i*batchsize:(i+1)*batchsize, ...])
-
-
-def random_scale(x):
-    y = []
-    shape = x.shape
-    for im in x:
-        i = np.random.randint(0, 20)
-        padded = np.pad(im, [[i,i],[i,i],[0,0]], 'constant')
-        y.append(cv2.resize(padded, (28, 28)))
-    return np.stack(y, axis=0).reshape(shape)
-
-
-# def randomscale(x):
-#     # random sized padding and resize
-#     z = []
-#     shape = x.get_shape().as_list()
-#     for im in tf.unstack(x, axis=0):
-#         i = tf.random_uniform(shape=[], dtype=tf.int32, maxval=20, minval=0)
-#         y = tf.pad(im, [[i, i], [i, i], [0,0]], "CONSTANT")
-#         # images will be in the center. what about stretching in the x or y dim?
-#         z.append(tf.image.resize_images(y, [shape[1], shape[2]]))
-#     z = tf.stack(z, axis=0)
-#     z.set_shape(shape)
-#     return z
-
-
-@slim.add_arg_scope
-def multiscale_atrousconv(x, channels, filter_size=3, n=4, activation_fn=tf.nn.relu,
-                          weights_initializer=None, bias_initializer=None, scope=''):
-    """
-    Args:
-        x (tf.Tensor): a tensor of input values. [batch, width, height, k]
-        channels (int): number of feautres to output
-        filter_size (int): number of params to use into each direction.
-        n (int): number of different scales (defaults to powers of 2) to convolve over.
-
-    Returns:
-        y (tf.Tensor): outputs. [batch, width, height, channels]
-    """
-    # it feels weird how we cannot down sample
-    shape = x.get_shape().as_list()
-    with tf.variable_scope('multi_scale_conv' + scope):
-        filters = tf.get_variable(shape=[filter_size, filter_size, shape[-1],
-                                  channels//n], dtype=tf.float32,
-                                  name='filters', initializer=weights_initializer)
-        bias = tf.get_variable(shape=[channels] , dtype=tf.float32, name='bias',
-                               initializer=bias_initializer)
-        y = tf.concat(3, [tf.nn.atrous_conv2d(x, filters, (i+1), padding='SAME')
-                          for i in range(n)])
-        return activation_fn(y + bias)
 
 
 def accuracy(p, y):
@@ -91,17 +43,6 @@ def main(_):
 
     x = tf.placeholder(shape=[50, 28, 28, 1], dtype=tf.float32)
     y = tf.placeholder(shape=[50], dtype=tf.int64)
-    # if FLAGS.scale:
-    #     x = randomscale(x)
-
-    # TODO. want to do two different base tests.
-    # - same number of params.
-    # - same amount of compute.
-
-    # what is a fair test? test acc, same init, averaged over a bunch of tests
-    # ?? test on different types of data. scaled and not.
-    # maybe the real strength of conv2d is that we can downsample? how can
-    # we compare this?
 
     # channel_sizes = [16, 16, 16, 16]
     channel_sizes = [64, 32]
@@ -111,13 +52,10 @@ def main(_):
                         activation_fn=tf.nn.relu,
                         weights_initializer=tf.orthogonal_initializer(),
                         biases_initializer=tf.constant_initializer(0.0)):
-        # TODO need BN
-        if FLAGS.atrous:
-            if FLAGS.same_params:  # same number of params
-                fmap = slim.stack(x, multiscale_atrousconv, channel_sizes)
-            else:  # same amuont of compute
-                fmap = slim.stack(x, multiscale_atrousconv,
-                                  [n*c for c in channel_sizes])
+        # TODO need BN?
+        if FLAGS.shared:
+            if FLAGS.shuffled:
+
         else:
             fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (1, 1), 'SAME')
                                                 for k in channel_sizes])
@@ -157,14 +95,14 @@ def main(_):
 
                 L, _ = sess.run([loss, train_step],
                                 {x: batch_ims, y: batch_labels})
-                # print('\rloss: {}'.format(L), end='', flush=True)
+                print('\rloss: {}'.format(L), end='', flush=True)
 
                 if step%500==0:
                     ids = np.random.randint(0, 5000, 50)
                     batch_test_ims = test_ims[ids, ...]
                     batch_test_labels = test_labels[ids]
-                    if FLAGS.scale:
-                        batch_test_ims = random_scale(batch_test_ims)
+
+
                     loss_summ, train_summ = sess.run([loss_summary, train],
                                                {x: batch_ims, y: batch_labels})
                     writer.add_summary(train_summ, step)
