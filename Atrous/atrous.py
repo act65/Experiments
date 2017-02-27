@@ -10,7 +10,7 @@ tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
 tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
-tf.app.flags.DEFINE_float('lr', 0.01, 'learning rate.')
+tf.app.flags.DEFINE_float('lr', 0.001, 'learning rate.')
 tf.app.flags.DEFINE_bool('atrous', False, 'whether to use atrous conv')
 tf.app.flags.DEFINE_bool('scale', True, 'whether to randomly scale data')
 tf.app.flags.DEFINE_bool('same_params', True, 'whether to use same n of params '
@@ -30,7 +30,7 @@ def random_scale(x):
     y = []
     shape = x.shape
     for im in x:
-        i = np.random.randint(0, 20)
+        i = np.random.randint(0, 50)
         padded = np.pad(im, [[i,i],[i,i],[0,0]], 'constant')
         y.append(cv2.resize(padded, (28, 28)))
     return np.stack(y, axis=0).reshape(shape)
@@ -95,7 +95,7 @@ def main(_):
 
 
     # channel_sizes = [16, 16, 16, 16]
-    channel_sizes = [64, 32]
+    channel_sizes = [32, 32, 32]
     n = 4
 
     with slim.arg_scope([slim.conv2d],
@@ -104,14 +104,16 @@ def main(_):
                         biases_initializer=tf.constant_initializer(0.0)):
         # TODO need BN?
         if FLAGS.atrous:
-            if FLAGS.same_params:  # same number of params
+            if not FLAGS.same_params:  # same amount of compute
                 fmap = slim.stack(x, multiscale_atrousconv, channel_sizes)
-            else:  # same amuont of compute
+            else:  # same num of params
                 fmap = slim.stack(x, multiscale_atrousconv,
-                                  [n*c for c in channel_sizes])
+                                  [n*c for c in channel_sizes[:-1]])
         else:
             fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (1, 1), 'SAME')
                                                 for k in channel_sizes])
+
+    # tf.nn.max_pool(value, ksize, strides, padding, data_format='NHWC', name=None)
 
 
     fmap_summ = tf.summary.image('fmap', tf.expand_dims(tf.reduce_max(fmap, axis=3), axis=-1))

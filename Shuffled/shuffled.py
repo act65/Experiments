@@ -20,6 +20,20 @@ FLAGS = tf.app.flags.FLAGS
 # does this sort of idea relate to cecho state nets?
 
 
+def shuffle_var(var):
+    """
+    Args:
+        var (tf.Tensor): any tensor
+
+    Return:
+        (tf.Tensor): a randomly shuffled tensor with values from var.
+    """
+    shape = var.get_shape()
+    ids = range(np.prod(shape.as_list()))
+    np.random.shuffle(ids)
+    return tf.reshape(tf.gather(tf.reshape(var, [-1]), ids), shape)
+
+
 def batch(ims, labels, batchsize):
     ims, labels = shuffle(ims, labels)
     shape = ims.shape
