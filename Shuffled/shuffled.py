@@ -1,4 +1,3 @@
-from __future__ import print_function
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tensorflow.examples.tutorials.mnist import input_data

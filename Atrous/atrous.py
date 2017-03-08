@@ -95,12 +95,13 @@ def main(_):
 
 
     # channel_sizes = [16, 16, 16, 16]
-    channel_sizes = [32, 32, 32]
+    channel_sizes = [32, 32]
     n = 4
 
     with slim.arg_scope([slim.conv2d],
                         activation_fn=tf.nn.relu,
                         weights_initializer=tf.orthogonal_initializer(),
+                        # what about exp init?
                         biases_initializer=tf.constant_initializer(0.0)):
         # TODO need BN?
         if FLAGS.atrous:
@@ -113,7 +114,7 @@ def main(_):
             fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (1, 1), 'SAME')
                                                 for k in channel_sizes])
 
-    # tf.nn.max_pool(value, ksize, strides, padding, data_format='NHWC', name=None)
+    # tf.nn.max_pool(z, (2, 2), (2, 2), 'SAME')
 
 
     fmap_summ = tf.summary.image('fmap', tf.expand_dims(tf.reduce_max(fmap, axis=3), axis=-1))
