@@ -1,6 +1,7 @@
 from __future__ import print_function
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+from tensorflow.python.client import timeline
 from tensorflow.examples.tutorials.mnist import input_data
 from sklearn.utils import shuffle
 import numpy as np
@@ -9,12 +10,14 @@ import cv2
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
-tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
+tf.app.flags.DEFINE_integer('epochs', 100, 'number of times through dataset.')
+tf.app.flags.DEFINE_integer('d', 36, 'size of input images')
 tf.app.flags.DEFINE_float('lr', 0.001, 'learning rate.')
 tf.app.flags.DEFINE_bool('atrous', False, 'whether to use atrous conv')
 tf.app.flags.DEFINE_bool('scale', True, 'whether to randomly scale data')
 tf.app.flags.DEFINE_bool('same_params', True, 'whether to use same n of params '
                          'vs same amount of compute.')
+tf.app.flags.DEFINE_bool('fully_connected', False, 'use a fc on the end?')
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -25,14 +28,21 @@ def batch(ims, labels, batchsize):
         yield (i, ims[i*batchsize:(i+1)*batchsize, ...],
                labels[i*batchsize:(i+1)*batchsize, ...])
 
+def reshape(x, d):
+    y = []
+    shape = x.shape
+    for im in x:
+        i = np.random.randint(0, 64)
+        y.append(cv2.resize(im, (d, d)))
+    return np.stack(y, axis=0).reshape((shape[0], d, d, shape[-1]))
 
 def random_scale(x):
     y = []
     shape = x.shape
     for im in x:
-        i = np.random.randint(0, 50)
+        i = np.random.randint(0, 64)
         padded = np.pad(im, [[i,i],[i,i],[0,0]], 'constant')
-        y.append(cv2.resize(padded, (28, 28)))
+        y.append(cv2.resize(padded, (36, 36)))
     return np.stack(y, axis=0).reshape(shape)
 
 
@@ -51,7 +61,7 @@ def random_scale(x):
 
 
 @slim.add_arg_scope
-def multiscale_atrousconv(x, channels, filter_size=3, n=4, activation_fn=tf.nn.relu,
+def multiscale_atrousconv(x, channels, n=5, filter_size=3, activation_fn=tf.nn.relu,
                           weights_initializer=None, bias_initializer=None, scope=''):
     """
     Args:
@@ -83,20 +93,21 @@ def main(_):
     print('Get data')
     mnist = input_data.read_data_sets(FLAGS.datadir, one_hot=False)
     ims = np.reshape(mnist.train.images, [-1, 28, 28, 1]).astype(np.float32)
+    ims = reshape(ims, FLAGS.d)
     labels = np.reshape(mnist.train.labels, [-1]).astype(np.int64)
 
     test_ims = np.reshape(mnist.test.images, [-1, 28, 28, 1]).astype(np.float32)
+    test_ims = reshape(test_ims, FLAGS.d)
     test_labels = np.reshape(mnist.test.labels, [-1]).astype(np.int64)
 
-    x = tf.placeholder(shape=[50, 28, 28, 1], dtype=tf.float32)
+    x = tf.placeholder(shape=[50, FLAGS.d, FLAGS.d, 1], dtype=tf.float32)
     y = tf.placeholder(shape=[50], dtype=tf.int64)
     # if FLAGS.scale:
     #     x = randomscale(x)
 
 
     # channel_sizes = [16, 16, 16, 16]
-    channel_sizes = [32, 32]
-    n = 4
+    channel_sizes = [(16, 4), (10, 2)]
 
     with slim.arg_scope([slim.conv2d],
                         activation_fn=tf.nn.relu,
@@ -105,24 +116,26 @@ def main(_):
                         biases_initializer=tf.constant_initializer(0.0)):
         # TODO need BN?
         if FLAGS.atrous:
-            if not FLAGS.same_params:  # same amount of compute
-                fmap = slim.stack(x, multiscale_atrousconv, channel_sizes)
-            else:  # same num of params
-                fmap = slim.stack(x, multiscale_atrousconv,
-                                  [n*c for c in channel_sizes[:-1]])
+            fmap = slim.stack(x, multiscale_atrousconv, channel_sizes)
         else:
             fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (1, 1), 'SAME')
-                                                for k in channel_sizes])
+                                                for k, n in channel_sizes])
 
     # tf.nn.max_pool(z, (2, 2), (2, 2), 'SAME')
 
 
     fmap_summ = tf.summary.image('fmap', tf.expand_dims(tf.reduce_max(fmap, axis=3), axis=-1))
-    logits = slim.fully_connected(tf.reduce_mean(fmap, axis=[1,2]), 10, activation_fn=None)
+    if FLAGS.fully_connected:
+        logits = slim.fully_connected(tf.reduce_mean(fmap, axis=[1,2]), 10, activation_fn=None)
+    else:
+        logits = tf.reduce_mean(fmap, axis=[1,2])
 
     loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits, y))
     loss_summary = tf.summary.scalar('loss', loss,)
-    train_step = tf.train.AdamOptimizer(FLAGS.lr).minimize(loss)
+    global_step = tf.Variable(0, name='global_step', trainable=False)
+    step_summary = tf.summary.scalar('global_step', global_step)
+    train_step = tf.train.AdamOptimizer(FLAGS.lr).minimize(loss,
+                                    global_step=global_step)
 
     p = tf.nn.softmax(logits)
     acc = accuracy(p, y)
@@ -142,6 +155,9 @@ def main(_):
 
     with tf.Session() as sess:
         writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
+        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_metadata = tf.RunMetadata()
+
         sess.run(tf.global_variables_initializer())
         step = 0
         for e in range(FLAGS.epochs):
@@ -150,8 +166,14 @@ def main(_):
                     batch_ims = random_scale(batch_ims)
 
                 L, _ = sess.run([loss, train_step],
-                                {x: batch_ims, y: batch_labels})
+                                {x: batch_ims, y: batch_labels},
+                                options=run_options, run_metadata=run_metadata)
                 # print('\rloss: {}'.format(L), end='', flush=True)
+
+                tl = timeline.Timeline(run_metadata.step_stats)
+                ctf = tl.generate_chrome_trace_format()
+                with open('timeline.json', 'w') as f:
+                    f.write(ctf)
 
                 if step%500==0:
                     ids = np.random.randint(0, 5000, 50)
