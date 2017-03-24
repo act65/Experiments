@@ -10,15 +10,16 @@ import numpy as np
 import os
 
 import neuralnetworks as nns
-from neuralnetworks import optimisers as opt
+from neuralnetworks import optimisers
 
 
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
-tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
-tf.app.flags.DEFINE_float('lr', 0.001, 'learning rate.')
+tf.app.flags.DEFINE_integer('epochs', 100, 'number of times through dataset.')
+tf.app.flags.DEFINE_float('lr', 0.0001, 'learning rate.')
 tf.app.flags.DEFINE_bool('hyper', False, 'whether to use grad descent on lr')
+tf.app.flags.DEFINE_float('beta', 0.0001, 'hyper learning rate')
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -44,15 +45,16 @@ def main(_):
     x = tf.placeholder(shape=[50, 28, 28, 1], dtype=tf.float32)
     y = tf.placeholder(shape=[50], dtype=tf.int64)
 
-    channel_sizes = [16, 16]
+    # channel_sizes = [(64, 2), (32, 2), (16, 2)]
+    channel_sizes = [(16, 1)] * 15
 
     with slim.arg_scope([slim.conv2d],
                         activation_fn=tf.nn.relu,
                         weights_initializer=tf.orthogonal_initializer(),
                         biases_initializer=tf.constant_initializer(0.0)):
 
-        fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (1, 1), 'SAME')
-                                            for k in channel_sizes])
+        fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (s, s), 'SAME')
+                                            for k, s in channel_sizes])
         fmap_summ = tf.summary.image('fmap', tf.expand_dims(tf.reduce_max(fmap, axis=3), axis=-1))
 
 
@@ -63,7 +65,21 @@ def main(_):
 
     global_step = tf.Variable(0, name='global_step', trainable=False)
     step_summary = tf.summary.scalar('global_step', global_step)
-    train_step = opt.HyperSGD(FLAGS.lr).minimize(loss, global_step=global_step)
+
+    if FLAGS.hyper:
+        opt = optimisers.HyperSGD(FLAGS.lr, FLAGS.beta)
+    else:
+        opt = tf.train.GradientDescentOptimizer(FLAGS.lr)
+
+    # if FLAGS.hyper:
+    #     opt = optimisers.HyperAdam(FLAGS.lr, FLAGS.beta)
+    # else:
+    #     opt = tf.train.AdamOptimizer(FLAGS.lr)
+
+    logdir = os.path.join(FLAGS.logdir, opt._name)
+    print(logdir)
+    train_step = opt.minimize(loss, global_step=global_step)
+
 
     p = tf.nn.softmax(logits)
     acc = accuracy(p, y)
@@ -76,13 +92,18 @@ def main(_):
     test_im = tf.summary.image('test_im', x)
     test = tf.summary.merge([test_accuracy, test_im])
 
+    if FLAGS.hyper:
+        lr_summaries = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES,
+                                                          scope=opt._name))
+        train = tf.summary.merge([train, lr_summaries])
+
 
     n = np.sum([np.prod(var.get_shape().as_list())
                for var in tf.trainable_variables()])
     print('num of vars {}'.format(n))
 
     with tf.Session() as sess:
-        writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
+        writer = tf.summary.FileWriter(logdir, sess.graph)
         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
         run_metadata = tf.RunMetadata()
 
@@ -93,19 +114,20 @@ def main(_):
                 L, _ = sess.run([loss, train_step],
                                 {x: batch_ims, y: batch_labels},
                                 options=run_options, run_metadata=run_metadata)
-                # print('\rloss: {}'.format(L), end='', flush=True)
+                print('\rloss: {:.3f}'.format(L), end='', flush=True)
 
                 tl = timeline.Timeline(run_metadata.step_stats)
                 ctf = tl.generate_chrome_trace_format()
-                with open(os.path.join(FLAGS.logdir, 'timeline.json'), 'w') as f:
+                with open(os.path.join(logdir, 'timeline.json'), 'w') as f:
                     f.write(ctf)
 
                 if step%500==0:
+                    # validate and save summaries
                     ids = np.random.randint(0, 5000, 50)
                     batch_test_ims = test_ims[ids, ...]
                     batch_test_labels = test_labels[ids]
-                    loss_summ, train_summ = sess.run([loss_summary, train],
-                                               {x: batch_ims, y: batch_labels})
+                    loss_summ, train_summ = sess.run( [loss_summary, train],
+                                        {x: batch_ims, y: batch_labels})
                     writer.add_summary(train_summ, step)
                     writer.add_summary(loss_summ, step)
                     test_summ = sess.run(test,
