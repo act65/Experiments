@@ -1,18 +1,16 @@
-### Hypothesis.
-
-Using dilated/atrous convolutions will allow the model to learn multi scale filters. Aka sharing parameters over scale.
-
 ### Experiment.
 
-Artificially augment MNIST to make it have multi scale properties (randomly scale the digits).
-
-Find minimal example where traditional conv fails and ... This will show that ...
-
-
-To ensure fair tests we need to compare conv vs atrous conv with;
-* no scaling
-*
+Compare traditional and hyper optimisation.
+Doing gradient desent on the learning rate.
 
 ### Results.
 
-... thus atrous conv should be used in XXX setting.
+should just add the summaries?
+![pic](pics/bias_weights.png)
+
+
+### Conclusion.
+
+Saves some time doing a hyper parameter search for the lr.
+If the lr was correctly chosen initially, hyperopt doesnt really help.
+Can we also use this for other hyper parameters?

@@ -9,14 +9,14 @@ from sklearn.utils import shuffle
 import numpy as np
 import os
 
-import neuralnetworks as nns
-from neuralnetworks import optimisers
-
+# import neuralnetworks as nns
+# from neuralnetworks import optimisers
+import optimisers
 
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
-tf.app.flags.DEFINE_integer('epochs', 100, 'number of times through dataset.')
+tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
 tf.app.flags.DEFINE_float('lr', 0.0001, 'learning rate.')
 tf.app.flags.DEFINE_bool('hyper', False, 'whether to use grad descent on lr')
 tf.app.flags.DEFINE_float('beta', 0.0001, 'hyper learning rate')
@@ -46,7 +46,7 @@ def main(_):
     y = tf.placeholder(shape=[50], dtype=tf.int64)
 
     # channel_sizes = [(64, 2), (32, 2), (16, 2)]
-    channel_sizes = [(16, 1)] * 15
+    channel_sizes = [(16, 1)] * 10
 
     with slim.arg_scope([slim.conv2d],
                         activation_fn=tf.nn.relu,
@@ -66,15 +66,15 @@ def main(_):
     global_step = tf.Variable(0, name='global_step', trainable=False)
     step_summary = tf.summary.scalar('global_step', global_step)
 
-    if FLAGS.hyper:
-        opt = optimisers.HyperSGD(FLAGS.lr, FLAGS.beta)
-    else:
-        opt = tf.train.GradientDescentOptimizer(FLAGS.lr)
-
     # if FLAGS.hyper:
-    #     opt = optimisers.HyperAdam(FLAGS.lr, FLAGS.beta)
+    #     opt = optimisers.HyperSGD(FLAGS.lr, FLAGS.beta)
     # else:
-    #     opt = tf.train.AdamOptimizer(FLAGS.lr)
+    #     opt = tf.train.GradientDescentOptimizer(FLAGS.lr)
+
+    if FLAGS.hyper:
+        opt = optimisers.HyperAdam(FLAGS.lr, FLAGS.beta)
+    else:
+        opt = tf.train.AdamOptimizer(FLAGS.lr)
 
     logdir = os.path.join(FLAGS.logdir, opt._name)
     print(logdir)
@@ -86,11 +86,11 @@ def main(_):
 
     train_accuracy = tf.summary.scalar('train_acc', acc)
     train_im = tf.summary.image('train_im', x)
-    train = tf.summary.merge([train_accuracy, train_im, fmap_summ])
+    train = tf.summary.merge([train_accuracy])  #  train_im, fmap_summ
 
     test_accuracy = tf.summary.scalar('test_acc', acc)
     test_im = tf.summary.image('test_im', x)
-    test = tf.summary.merge([test_accuracy, test_im])
+    test = tf.summary.merge([test_accuracy])  # test_im
 
     if FLAGS.hyper:
         lr_summaries = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES,
