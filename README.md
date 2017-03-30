@@ -10,7 +10,7 @@ What theory is there around these concepts?
 
 ### TODO.
 
-Test with;
+Test;
 
 * atrous conv (sharing over scale)
 * TT decompositions (sharing over ?!?)

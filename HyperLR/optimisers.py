@@ -44,9 +44,6 @@ class HyperSGD(optimizer.Optimizer):
 
 class HyperAdam(optimizer.Optimizer):
     """Optimizer that implements the hyper Adam algorithm.
-
-    See [Kingma et. al., 2014](http://arxiv.org/abs/1412.6980) and
-    [Baydin et al. 2017](https://arxiv.org/abs/1703.04782)).
     """
     def __init__(self, learning_rate=0.0001, beta=1e-7, beta1=0.9, beta2=0.999,
                  epsilon=1e-8, use_locking=False, name="HyperAdam"):
@@ -99,6 +96,8 @@ class HyperAdam(optimizer.Optimizer):
         a = self.get_slot(var, 'a')
         a_t = state_ops.assign_sub(a, self.beta * h_t)
         tf.summary.scalar('a_'+var.name, a)
+
+        # lr = self.d_t*a_t + (1-self.d_t)
 
         # var update. -a * m_t / (sqrt(v_t) + eps)
         v_update = state_ops.assign_sub(var, a_t * moving_avg *
