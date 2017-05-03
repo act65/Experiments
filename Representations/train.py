@@ -45,6 +45,8 @@ def main(_):
 
     # losses
     unsupervised_loss = orth(hidden, 1.0)
+    # TODO. if we were using sonnet then it would be super easy to do an
+    # autoencoder in the loss fn.
     discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
 
     # optimisation steps
@@ -77,13 +79,13 @@ def main(_):
         # NOTE. this is closer to what we actually want.
 
         # a different subset every time we validate?!?
-        idx = np.random.randint(0, len(labels), FLAGS.N_labels)         
+        idx = np.random.randint(0, len(labels), FLAGS.N_labels)
         for e in range(FLAGS.valid_epochs):
             for i, batch_ims, batch_labels in batch(ims[idx], labels[idx], FLAGS.batchsize):
                 L, _ = sess.run([discrim_loss, train_step],
                                 {x: batch_ims, T: batch_labels})
             summ = sess.run(valid_summary, {x: batch_ims, T: batch_labels})
-            writer.add_summary(summ, e+FLAGS.valid_epochs*step//50)
+            writer.add_summary(summ, e+FLAGS.valid_epochs*step//100)
 
         ### Validate classifier
         metrics = tf.get_collection('METRICS')
@@ -96,7 +98,7 @@ def main(_):
             sess.run(updates, {x: batch_ims, T: batch_labels})
         values = sess.run(metrics, {x: batch_ims, T: batch_labels})
 
-        # write
+        # write summary
         for k, v in zip(metrics, values):
             summ = tf.Summary(value=[tf.Summary.Value(tag='valid/' + k.name,
                                                       simple_value=float(v))])
@@ -118,7 +120,7 @@ def main(_):
         save_embeddings(FLAGS.logdir, str(step), sess, writer, config,
                         np.vstack(H),
                         np.vstack(L).reshape(10000),
-                        images=None)
+                        images=np.vstack(X))
 
     with tf.Session() as sess:
         writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
@@ -135,10 +137,10 @@ def main(_):
                     summ = sess.run(train_summary, {x: batch_ims})
                     writer.add_summary(summ, step)
 
-                if step%50==0 and step != 0:
+                if step%100==0:
                     validate(sess, writer, step)
 
-                if step%500==0 and False:
+                if step%5000==0:
                     embed(sess, step, config)
 
 if __name__ == '__main__':

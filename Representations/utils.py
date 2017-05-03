@@ -5,6 +5,8 @@ from tensorflow.contrib.tensorboard.plugins import projector
 from sklearn.utils import shuffle
 import os
 
+import numpy as np
+
 def encoder(x):
     with tf.variable_scope('encoder'):
         channel_sizes = [(16, 2), (32, 2), (64, 2)]
@@ -49,8 +51,8 @@ def save_embeddings(logdir, name, sess, writer, config, embeddings, labels, imag
     embedding = config.embeddings.add()
     embedding.tensor_name = embed_var.name
     embedding.metadata_path = os.path.join(logdir, name+'metadata.tsv')
-    if images:
-        img_path, img_size = save_images(images, sess)
+    if images is not None:
+        img_path, img_size = save_images(logdir, images, sess)
         embedding.sprite.image_path = img_path
         embedding.sprite.single_image_dim.extend(img_size)
 
@@ -63,13 +65,12 @@ def save_embeddings(logdir, name, sess, writer, config, embeddings, labels, imag
             metadata_file.write('%06d\t%s\n' % (i, L))
 
 
-def save_images(images, session):
+def save_images(logdir, images, sess):
     """sticks images together appropriately and saves them. Returns the path
     they are saved to and the width and height in pixels of the components."""
     # first step is to figure out the aspect ratio of the images and therefore
     # how to tile them
-    print(images.shape)
-    images = images.transpose([0, 2, 1, 3])
+    # images = images.transpose([0, 2, 1, 3])
     # for our purposes aspect is width/height
     aspect_ratio = images.shape[1] / images.shape[2]
     total = images.shape[0]
@@ -88,18 +89,16 @@ def save_images(images, session):
             else:
                 img = np.zeros_like(images[0, ...])
             img_index += 1
-            if FLAGS.image_borders:
-                img = _draw_border(img)
             column.append(img)
         all_pics.append(column.copy())
     all_pics = [np.concatenate(col, axis=1) for col in all_pics]
     all_pics = np.concatenate(all_pics, axis=0)
     img_tensor = 1.0 - tf.constant(all_pics)
     # stick it together a few times to get rgba with transparent background
-    img_tensor = tf.concat(2, [img_tensor,
-                               img_tensor,
-                               img_tensor,
-                               0.5*((1.0-img_tensor)**3) + 0.5])
+    img_tensor = tf.concat([img_tensor,
+                            img_tensor,
+                            img_tensor,
+                            0.5*((1.0-img_tensor)**3) + 0.5], axis=2)
 
     if all_pics.shape[0] > 8192 or all_pics.shape[1] > 8192:
         img_tensor = tf.expand_dims(img_tensor, 0)
@@ -115,13 +114,12 @@ def save_images(images, session):
         img_size = images.shape[1:3]
     # this seems necessary?
     img_size = [img_size[1], img_size[0]]
-    imname = os.path.join(FLAGS.logdir, 'saved_embeddings', 'images.png')
+    imname = os.path.join(logdir, 'images.png')
     # turn back to 8 bit
     img_tensor *= 255
     img_tensor = tf.saturate_cast(img_tensor, tf.uint8)
-    encoded_imgs = session.run(
+    encoded_imgs = sess.run(
         tf.image.encode_png(img_tensor))
-    print('saving images')
     with open(imname, 'wb') as fp:
         fp.write(encoded_imgs)
 
