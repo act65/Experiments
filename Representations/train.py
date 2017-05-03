@@ -44,7 +44,7 @@ def main(_):
     logits = classifier(hidden)
 
     # losses
-    unsupervised_loss = orth(hidden, 1.0)
+    unsupervised_loss = siamese(hidden, 1.0)
     # TODO. if we were using sonnet then it would be super easy to do an
     # autoencoder in the loss fn.
     discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
@@ -142,6 +142,7 @@ def main(_):
 
                 if step%5000==0:
                     embed(sess, step, config)
+                    raise SystemExit
 
 if __name__ == '__main__':
     tf.app.run()

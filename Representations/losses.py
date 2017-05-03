@@ -6,6 +6,8 @@ def spherical_noise(shape):
     return z/tf.reduce_mean(z, axis=-1)
 
 def hungarian_matching(x, y):
+    # https://github.com/tensorflow/tensorflow/pull/3780
+    # could compile binary and add op
     return x, y
 
 def nat(inputs, scale):
@@ -29,14 +31,34 @@ def nat(inputs, scale):
         inputs, z = hungarian_matching(inputs, z)
         return scale*tf.nn.l2_loss(inputs - z)
 
-def siamese(y):
+def mutual_info(inputs):
     """
+    Noise as targets can be interpreted as optimising the mutual information
+    of ???
+    """
+    return None
+
+
+def siamese(inputs, scale):
+    """
+    Want each datapoint to be a distance of 1 away form every other datapoint.
+
+    Instead of running two networks side by side we can just split the batch
+    into two parts achieving the same result.
+    Or just use the whole rest of the batch?!
+
+    min sum_i sum_j 1-d(x_i, y_i))
 
     """
-    n = tf.shape(y)[0]
-    a = y[:n]
-    b = y[n:]
-    return tf.reduce_mean(1-tf.norm(a-b))
+    # NOTE. How is this and orthogonal regularisation different?
+    # But are minimising 1 - the distance between datapoints.
+    batch_size = tf.shape(inputs)[0]
+    diff = (tf.expand_dims(tf.expand_dims(inputs, -2), 0) -
+            tf.expand_dims(tf.expand_dims(inputs, -1), 1))
+    # magnitude of difference vector
+    similarities = tf.norm(diff, axis=[-1, -2]) # not sure about this?!
+    targets = 1-tf.eye(batch_size)
+    return scale*tf.reduce_mean(tf.square(targets-similarities))
 
 def orth(inputs, scale, normalise=False, summarise=True,
                            name='orthogonal_regulariser'):
@@ -83,4 +105,4 @@ def orth(inputs, scale, normalise=False, summarise=True,
     return loss_val
 
 
-# TODO. actualy cross entropy. what actual discriminative loss... 
+# TODO. actualy cross entropy. what actual discriminative loss...
