@@ -29,7 +29,7 @@ def nat(inputs, scale):
     with tf.name_scope(name):
         z = spherical_noise(inputs.get_shape())
         inputs, z = hungarian_matching(inputs, z)
-        return scale*tf.nn.l2_loss(inputs - z)
+        return scale*tf.reduce_mean(tf.square(inputs - z))
 
 def mutual_info(inputs):
     """
@@ -52,13 +52,14 @@ def siamese(inputs, scale):
     """
     # NOTE. How is this and orthogonal regularisation different?
     # But are minimising 1 - the distance between datapoints.
-    batch_size = tf.shape(inputs)[0]
-    diff = (tf.expand_dims(tf.expand_dims(inputs, -2), 0) -
-            tf.expand_dims(tf.expand_dims(inputs, -1), 1))
-    # magnitude of difference vector
-    similarities = tf.norm(diff, axis=[-1, -2]) # not sure about this?!
-    targets = 1-tf.eye(batch_size)
-    return scale*tf.reduce_mean(tf.square(targets-similarities))
+    with tf.name_scope('equidist_regulariser'):
+        batch_size = tf.shape(inputs)[0]
+        diff = tf.expand_dims(inputs, 0) - tf.expand_dims(inputs, 1)
+        similarities = tf.sqrt(1e-8+tf.reduce_mean(tf.square(diff), axis=-1))
+        targets = 1-tf.eye(batch_size)
+        loss_val = scale*tf.reduce_mean(tf.square(targets-similarities))
+
+        return loss_val
 
 def orth(inputs, scale, normalise=False, summarise=True,
                            name='orthogonal_regulariser'):
@@ -91,15 +92,12 @@ def orth(inputs, scale, normalise=False, summarise=True,
         if normalise:
             inputs = tf.nn.l2_normalize(inputs, -1)
         similarities = tf.matmul(inputs, inputs, transpose_b=True)
-        diffs = similarities - tf.eye(batch_size)
-        loss_val = scale * tf.reduce_mean(tf.square(diffs))
+        targets = tf.eye(batch_size)
+        loss_val = scale*tf.reduce_mean(tf.square(similarities - targets))
 
         if summarise:
             tf.summary.image('similarities',
                              tf.reshape(similarities,
-                                        [1, batch_size, batch_size, 1]))
-            tf.summary.image('difference_from_eye',
-                             tf.reshape(diffs,
                                         [1, batch_size, batch_size, 1]))
             tf.summary.scalar('orthogonal_reg', loss_val)
     return loss_val

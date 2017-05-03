@@ -31,35 +31,38 @@ def batch(ims, labels, batchsize):
         yield (i, ims[i*batchsize:(i+1)*batchsize, ...],
                   labels[i*batchsize:(i+1)*batchsize, ...])
 
-def save_embeddings(logdir, name, sess, writer, config, embeddings, labels, images=None):
+def save_embeddings(logdir, embeddings, labels, images=None):
     """
     Args:
         embeddings: A numpy array of shape (10000, features) and type float32.
         labels: a numpy array of int32's. (10000,)
     """
-    embed_var = tf.Variable(embeddings, name='embeddings'+name)
-    sess.run(embed_var.initializer)
+    with tf.Graph().as_default() as g:
+        sess = tf.Session()
+        embed_var = tf.Variable(embeddings, name='embeddings')
+        sess.run(embed_var.initializer)
 
-    saver = tf.train.Saver(var_list=[embed_var])
-    os.makedirs(logdir, exist_ok=True)
-    fname = saver.save(sess, os.path.join(logdir, name+'.ckpt'),
-                       write_meta_graph=False)
+        saver = tf.train.Saver(var_list=[embed_var])
+        writer = tf.summary.FileWriter(logdir, sess.graph)
+        os.makedirs(logdir, exist_ok=True)
+        fname = saver.save(sess, os.path.join(logdir, 'model.ckpt'),
+                           write_meta_graph=False)
 
-    print('\nembedding saved to {}'.format(fname))
+        print('\nembedding saved to {}'.format(fname))
 
+        config = projector.ProjectorConfig()
+        embedding = config.embeddings.add()
+        embedding.tensor_name = embed_var.name
+        embedding.metadata_path = os.path.join(logdir, 'metadata.tsv')
+        if images is not None:
+            img_path, img_size = save_images(logdir, images, sess)
+            embedding.sprite.image_path = img_path
+            embedding.sprite.single_image_dim.extend(img_size)
 
-    embedding = config.embeddings.add()
-    embedding.tensor_name = embed_var.name
-    embedding.metadata_path = os.path.join(logdir, name+'metadata.tsv')
-    if images is not None:
-        img_path, img_size = save_images(logdir, images, sess)
-        embedding.sprite.image_path = img_path
-        embedding.sprite.single_image_dim.extend(img_size)
-
-    projector.visualize_embeddings(writer, config)
+        projector.visualize_embeddings(writer, config)
 
     # write labels.
-    with open(os.path.join(logdir, name+'metadata.tsv'), 'w') as metadata_file:
+    with open(os.path.join(logdir, 'metadata.tsv'), 'w') as metadata_file:
         metadata_file.write('Name\tClass\n')
         for i, L in enumerate(labels):
             metadata_file.write('%06d\t%s\n' % (i, L))
