@@ -81,3 +81,6 @@ def orth(inputs, scale, normalise=False, summarise=True,
                                         [1, batch_size, batch_size, 1]))
             tf.summary.scalar('orthogonal_reg', loss_val)
     return loss_val
+
+
+# TODO. actualy cross entropy. what actual discriminative loss... 

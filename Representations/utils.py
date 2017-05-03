@@ -1,7 +1,9 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+from tensorflow.contrib.tensorboard.plugins import projector
 
 from sklearn.utils import shuffle
+import os
 
 def encoder(x):
     with tf.variable_scope('encoder'):
@@ -27,52 +29,36 @@ def batch(ims, labels, batchsize):
         yield (i, ims[i*batchsize:(i+1)*batchsize, ...],
                   labels[i*batchsize:(i+1)*batchsize, ...])
 
-
-
-def get_embeddings(sess, ims, labels, x, hidden):
-    X = []; H = []; L = []
-    for i, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-        if len(L) == 10000: break
-        print('step {}'.format(i), end='', flush=True)
-        X.append(batch_ims)
-        H.append(sess.run(hidden, feed_dict={x: batch_ims}))
-        L.append(batch_labels)
-    return np.vstack(X), np.vstack(H), np.vstack(L).reshape((10000))
-
-
-def save_embeddings(sess, embeddings, labels, images=None):
+def save_embeddings(logdir, name, sess, writer, config, embeddings, labels, images=None):
     """
     Args:
         embeddings: A numpy array of shape (10000, features) and type float32.
         labels: a numpy array of int32's. (10000,)
     """
-    embed_var = tf.Variable(embeddings, name='embeddings')
+    embed_var = tf.Variable(embeddings, name='embeddings'+name)
     sess.run(embed_var.initializer)
 
     saver = tf.train.Saver(var_list=[embed_var])
-    os.makedirs(FLAGS.logdir, exist_ok=True)
-    fname = saver.save(sess, os.path.join(FLAGS.logdir, 'model.ckpt'),
+    os.makedirs(logdir, exist_ok=True)
+    fname = saver.save(sess, os.path.join(logdir, name+'.ckpt'),
                        write_meta_graph=False)
 
-    print('saved to {}'.format(fname))
-    print('    {}'.format(embed_var.get_shape()))
+    print('\nembedding saved to {}'.format(fname))
 
-    summary_writer = tf.train.SummaryWriter(FLAGS.logdir)
-    config = projector.ProjectorConfig()
+
     embedding = config.embeddings.add()
     embedding.tensor_name = embed_var.name
-    embedding.metadata_path = os.path.join(FLAGS.logdir, 'metadata.tsv')
+    embedding.metadata_path = os.path.join(logdir, name+'metadata.tsv')
     if images:
         img_path, img_size = save_images(images, sess)
         embedding.sprite.image_path = img_path
         embedding.sprite.single_image_dim.extend(img_size)
 
-    projector.visualize_embeddings(summary_writer, config)
+    projector.visualize_embeddings(writer, config)
 
     # write labels.
-    with open(os.path.join(FLAGS.logdir, 'metadata.tsv'), 'w') as metadata_file:
+    with open(os.path.join(logdir, name+'metadata.tsv'), 'w') as metadata_file:
         metadata_file.write('Name\tClass\n')
-        print('labels', labels.shape)
         for i, L in enumerate(labels):
             metadata_file.write('%06d\t%s\n' % (i, L))
 
