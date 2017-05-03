@@ -1,12 +1,33 @@
 import tensorflow as tf
 
-def nat(y):
+def spherical_noise(shape):
+    # how to get uniformly distributed noise on a ball?
+    z = tf.random_uniform(shape=shape, dtype=tf.float32)
+    return z/tf.reduce_mean(z, axis=-1)
+
+def hungarian_matching(x, y):
+    return x, y
+
+def nat(inputs, scale):
     """
+    [Noise as targets](https://arxiv.org/abs/1704.05310).
+    This attempts to train our hidden representation, y, to be similar to a
+    normal distribution over the unit ball. This is achineved by matching
+    random noise to the closest hidden representations of a batch.
+    min d(x, noise) Thus the name; Noise as targets.
+
+    (What about training to be indistinguishable from a uniform distribution? GANs)
+    Or using a different measure of distance? MMD
+
+    Args:
+        inputs:
+
 
     """
-    z = tf.random_normal()
-    y, z = match(y, z)
-    return tf.l2_loss(y - z)
+    with tf.name_scope(name):
+        z = spherical_noise(inputs.get_shape())
+        inputs, z = hungarian_matching(inputs, z)
+        return scale*tf.nn.l2_loss(inputs - z)
 
 def siamese(y):
     """
@@ -17,13 +38,13 @@ def siamese(y):
     b = y[n:]
     return tf.reduce_mean(1-tf.norm(a-b))
 
-def orthogonal_regulariser(inputs, scale, normalise=False, summarise=True,
-                           name='orthogonality_constraint'):
+def orth(inputs, scale, normalise=False, summarise=True,
+                           name='orthogonal_regulariser'):
     """Regulariser to enourage a batch of things to be orthonormal.
     Aka, let x be [batch, -1] flattened version of inputs,
     we return ||xx^T - I||^2
 
-    Note that due to the reshaping required this will only worj if the batch
+    Note that due to the reshaping required this will only work if the batch
     size is defined.
 
     Args:

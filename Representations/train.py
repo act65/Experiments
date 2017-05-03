@@ -5,19 +5,21 @@ import tensorflow.contrib.slim as slim
 from tensorflow.python.client import timeline
 from tensorflow.examples.tutorials.mnist import input_data
 
-from sklearn.utils import shuffle
+
 import numpy as np
 import os
 
-from losses import nat, siamese
+from losses import nat, siamese, orth
 from utils import *
 
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
 tf.app.flags.DEFINE_integer('epochs', 50, 'number of times through dataset.')
+tf.app.flags.DEFINE_string('N_labels', 200, 'number of labels to train on')
 tf.app.flags.DEFINE_float('lr', 0.0001, 'learning rate.')
 FLAGS = tf.app.flags.FLAGS
+
 
 def main(_):
     mnist = input_data.read_data_sets(FLAGS.datadir, one_hot=False)
@@ -40,35 +42,26 @@ def main(_):
     logits = classifier(hidden)
 
     # losses
-    unsupervised_loss = nat(hidden)
-    discrim_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T)
+    unsupervised_loss = orth(hidden, 1.0)
+    discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
 
     # optimisation steps
     pretrain_step = opt.minimize(unsupervised_loss, global_step=global_step,
-          var_list=tf.get_collection('TRAINABLE_VARIABLES', scope='encoder'))
+          var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='encoder'))
     train_step = opt.minimize(discrim_loss,
-          var_list=tf.get_collection('TRAINABLE_VARIABLES', scope='classifier'))
+          var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier'))
 
-    # metrics
-    preds = tf.argmax(tf.nn.softmax(logits), axis=-1)
-    acc = tf.contrib.metrics.streaming_accuracy(preds, T,
+    with tf.name_scope('metrics'):
+        preds = tf.argmax(tf.nn.softmax(logits), axis=-1)
+        acc = tf.contrib.metrics.streaming_accuracy(preds, T,
                                   metrics_collections='METRICS',
                                   updates_collections='METRIC_UPDATES')
 
     # summaries
-    loss_summary = tf.summary.merge([tf.summary.scalar(loss.name, loss)
-                                     for loss in [unsupervised_loss, discrim_loss]])
-    accuracy_summary = tf.summary.scalar('acc', acc)
+    train_summary = tf.summary.scalar('pretraining', unsupervised_loss)
+    valid_summary = tf.summary.scalar('training', discrim_loss)
+    # test_summary = tf.summary.scalar('acc', acc)
 
-    def train(sess, writer, batch_ims):
-        if step%5 == 0:
-            loss_summ, step, L, _ = sess.run([loss_summary, global_step, loss,
-                                              pretrain_step], {x: batch_ims})
-            writer.add_summary(loss_summ, step)
-        else:
-            step, L, _ = sess.run([global_step, loss, pretrain_step], {x: batch_ims})
-        print('\rloss: {:.3f}'.format(L), end='', flush=True)
-        return step
 
     def validate(sess, writer, global_step):
         """
@@ -76,23 +69,30 @@ def main(_):
         it makes sense to validate our model on discrimination.
         """
         ### Train new classifier
-        variables = tf.get_collection('TRAINABLE_VARIABLES', scope='classifier')
+        variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier')
+        print(variables)
         sess.run(tf.variables_initializer(variables))
 
         # train classifier (only) on a labelled subset of the data
         # TODO a subset
-        for i, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-            sess.run(train_step, {x: batch_ims, T: batch_labels})
+        idx = np.random.randint(0, len(labels), FLAGS.N_labels)
+        # a different subset every time we validate?!?
+        for e in range(20):
+            for i, batch_ims, batch_labels in batch(ims[idx], labels[idx], FLAGS.batchsize):
+                L, _ = sess.run([discrim_loss, train_step],
+                                {x: batch_ims, T: batch_labels})
+            summ = sess.run(valid_summary, {x: batch_ims, T: batch_labels})
+            writer.add_summary(summ, e+20*step//50)
 
         ### Validate classifier
         metrics = tf.get_collection('METRICS')
         updates = tf.get_collection('METRIC_UPDATES')
-        variables = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope='valid')
+        variables = tf.get_collection('LOCAL_VARIABLES', scope='metrics')
         sess.run(tf.variables_initializer(variables))
 
         # eval and aggregate
         for _, batch_ims, batch_labels in batch(test_ims, test_labels, FLAGS.batchsize):
-            sess.run(updates)
+            sess.run(updates, {x: batch_ims, T: batch_labels})
         values = sess.run(metrics, {x: batch_ims, T: batch_labels})
 
         # write
@@ -102,19 +102,26 @@ def main(_):
             writer.add_summary(summ, global_step)
 
 
-    # def embed(sess):
-    #     x, h, l = get_embeddings()
-    #     save_embeddings(sess, h, l, images=x)
+    def embed(sess):
+        x, h, l = get_embeddings()
+        save_embeddings(sess, h, l, images=x)
 
     with tf.Session() as sess:
         writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
         sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
 
         for e in range(FLAGS.epochs):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-                step = train(sess, writer, batch_ims)
-                if step%50==0:
-                    validate(sess, writer)
+                step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
+                                      {x: batch_ims})
+                print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='', flush=True)
+                if step%20==0:
+                    summ = sess.run(train_summary, {x: batch_ims})
+                    writer.add_summary(summ, step)
+
+                if step%50==0 and step != 0:
+                    validate(sess, writer, step)
 
 if __name__ == '__main__':
     tf.app.run()
