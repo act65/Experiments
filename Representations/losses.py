@@ -61,6 +61,59 @@ def siamese(inputs, scale):
 
         return loss_val
 
+
+def gan(inputs, scale):
+    """
+    We have no idea what type of regularisation is a good idea for unsupervised
+    pretraining (for discrimination).
+    Instead can we learn the right function?
+    Our true goal is: ??
+    - easily discriminable datapoints (aka uniformly distributed?)
+    - disentangled representations (aka clustered?)
+    - ?
+    """
+    with tf.name_scope(name):
+        z = spherical_noise(inputs.get_shape())
+        fake = discriminator(inputs)
+        real = discriminator(z)
+
+        loss_val = adversarial(fake, real)
+
+def ae(inputs, scale, name='autoencoder'):
+    """
+    How are representations learn by AEs different from other methods?
+    How can we measure this difference?
+    - ML, explainable variance, orthogonality, distance between data,
+    (if we knew this, then we could just optimise it...)
+    """
+    with tf.name_scope(name):
+        y = decoder(inputs)
+        loss_val = tf.reduce_mean(tf.square(inputs-y))
+
+        return loss_val
+
+
+def kl(inputs, scale):
+    """
+    A weird idea. https://arxiv.org/abs/1705.00574
+    Lacking a theoretical motivation (doesnt mean it doesnt have one).
+    Interpret output representation as logits, and use to create a probability
+    distribution over outputs (as binary variables?).
+    Maximise the difference (measured by KL) in distributions between each
+    datapoint.
+    """
+    # NOTE. How is this and orthogonal regularisation different?
+    with tf.name_scope('kl_regulariser'):
+        batch_size = tf.shape(inputs)[0]
+        probs = tf.nn.softmax(inputs)
+        diff = tf.expand_dims(probs, 0) + tf.expand_dims(probs, 1)
+        similarities = tf.sqrt(1e-8+tf.reduce_mean(tf.square(diff), axis=-1))
+        cond = 1-tf.eye(batch_size)
+        loss_val = scale*tf.reduce_mean(tf.square(cond*similarities))
+
+        return loss_val
+
+
 def orth(inputs, scale, normalise=False, summarise=True,
                            name='orthogonal_regulariser'):
     """Regulariser to enourage a batch of things to be orthonormal.
@@ -101,6 +154,3 @@ def orth(inputs, scale, normalise=False, summarise=True,
                                         [1, batch_size, batch_size, 1]))
             tf.summary.scalar('orthogonal_reg', loss_val)
     return loss_val
-
-
-# TODO. actualy cross entropy. what actual discriminative loss...

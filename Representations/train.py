@@ -40,21 +40,17 @@ def main(_):
     main_opt = tf.train.AdamOptimizer(FLAGS.lr)
     classifier_opt = tf.train.AdamOptimizer(0.1)
 
-    # parameterised functions
-    hidden = encoder(x)
-    logits = classifier(hidden)
+    with tf.variable_scope('representation') as scope:
+        hidden = encoder(x)
+        unsupervised_loss = orth(hidden, 1.0)
+        pretrain_step = main_opt.minimize(unsupervised_loss, global_step=global_step,
+              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope))
 
-    # losses
-    unsupervised_loss = orth(hidden, 1.0)
-    # TODO. if we were using sonnet then it would be super easy to do an
-    # autoencoder in the loss fn.
-    discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
-
-    # optimisation steps
-    pretrain_step = main_opt.minimize(unsupervised_loss, global_step=global_step,
-          var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='encoder'))
-    train_step = classifier_opt.minimize(discrim_loss,
-          var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier'))
+    with tf.variable_scope('classifier') as scope:
+        logits = classifier(hidden)
+        discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
+        train_step = classifier_opt.minimize(discrim_loss,
+              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope))
 
     with tf.name_scope('metrics'):
         preds = tf.argmax(tf.nn.softmax(logits), axis=-1)
