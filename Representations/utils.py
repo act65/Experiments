@@ -4,47 +4,78 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 from sklearn.utils import shuffle
 import os
-import losses
 
 import numpy as np
 
-
-def get_loss_fn(name):
-    if name == 'siamese':
-        return losses.siamese
-    if name == 'orth':
-        return losses.orth
-
-
 ################################################################################
 # TODO. would be nicer if these were sonnet modules?!
+def classifier(x):
+    with tf.variable_scope('fc'):
+        x = tf.reduce_mean(x, axis=[1,2])
+        return slim.fully_connected(x, 10, activation_fn=None)
+
+
 def encoder(x):
     with tf.variable_scope('convnet'):
-        channel_sizes = [(16, 2), (32, 2), (64, 2)]
+        channel_sizes = [(16, 2), (32, 2)]
         with slim.arg_scope([slim.conv2d],
                             activation_fn=tf.nn.relu,
                             weights_initializer=tf.orthogonal_initializer(),
                             biases_initializer=tf.constant_initializer(0.0)):
 
-            fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (s, s), 'SAME')
+            return slim.stack(x, slim.conv2d, [(k, (3, 3), (s, s), 'SAME')
                                             for k, s in channel_sizes])
-            return tf.reduce_mean(fmap, axis=[1,2])
 
 def decoder(x):
     with tf.variable_scope('deconvnet'):
-        channel_sizes = [(16, 2), (32, 2), (10, 2)]
-        with slim.arg_scope([slim.conv2d],
+        channel_sizes = [(16, 2), (32, 2)]
+        with slim.arg_scope([deconv2d],
                             activation_fn=tf.nn.relu,
                             weights_initializer=tf.orthogonal_initializer(),
                             biases_initializer=tf.constant_initializer(0.0)):
 
-            fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (s, s), 'SAME')
+            fmap = slim.stack(x, deconv2d, [(k, (3, 3), s, 'SAME')
                                             for k, s in channel_sizes])
-            return tf.reduce_mean(fmap, axis=[1,2])
+        outputs = slim.conv2d(fmap, 1, (1, 1), (1,1), 'SAME',
+                              activation_fn=None,
+                              weights_initializer=tf.orthogonal_initializer(),
+                              biases_initializer=tf.constant_initializer(0.0))
+        return outputs
 
-def classifier(x):
-    with tf.variable_scope('fc'):
-        return slim.fully_connected(x, 10, activation_fn=None)
+
+@slim.add_arg_scope
+def deconv2d(x, num_outputs=None, kernel_size=None, stride=None, padding='SAME',
+           shape=None, activation_fn=None, scope='', method='upsample',
+           resize_method=tf.image.ResizeMethod.BILINEAR, weights_initializer=None,
+           biases_initializer=None, normalizer_fn=None, normalizer_params=None,
+           **kwargs):
+    """
+    Upsample-conv method for deconvolution.
+    See http://distill.pub/2016/deconv-checkerboard/ for more details.
+
+    Args:
+        x (tensor): An image, shape `[batch, height, width, k]`
+        channels (int): the number of output feature maps
+        shape: a tuple of ints. (new_width, new_height)
+
+    Returns:
+        - An image. [batch, shape[0], shape[1], channels]
+    """
+    with tf.variable_scope(scope or 'deconv'):
+        if shape is not None:  # if provided a target shape
+            x = tf.image.resize_images(
+                x, shape[1:3] if len(shape) == 4 else shape, method=resize_method)
+        else:  # else just use the stride
+            shape = x.get_shape().as_list()
+            # TODO. this is not robust to input shapes not to the power of 2
+            h = shape[1]*stride #(shape[1]-kernel_size[0])*stride + 2
+            w = shape[2]*stride
+            x = tf.image.resize_images(
+                x, [h, w], method=resize_method)
+            return slim.conv2d(x, num_outputs=num_outputs, kernel_size=kernel_size, stride=[1, 1],
+                               padding=padding, scope='deconv'+scope,
+                               activation_fn=activation_fn, **kwargs)
+
 
 ################################################################################
 

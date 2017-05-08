@@ -10,6 +10,7 @@ import numpy as np
 import os
 
 from utils import *
+from losses import get_loss_fn
 
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
@@ -19,7 +20,6 @@ tf.app.flags.DEFINE_integer('valid_epochs', 50, 'number of times through dataset
                             'validation training.')
 tf.app.flags.DEFINE_integer('N_labels', 200, 'number of labels to train on')
 tf.app.flags.DEFINE_float('lr', 0.0001, 'learning rate.')
-tf.app.flags.DEFINE_bool('pretrain', True, 'whether to pretrain')
 tf.app.flags.DEFINE_string('loss_fn', 'orth', 'loss function for pretraining')
 FLAGS = tf.app.flags.FLAGS
 
@@ -33,7 +33,9 @@ def main(_):
     test_labels = np.reshape(mnist.test.labels, [-1]).astype(np.int64)
 
     x = tf.placeholder(shape=[50, 28, 28, 1], dtype=tf.float32)
+    tf.add_to_collection('inputs', x)
     T = tf.placeholder(shape=[50], dtype=tf.int64)
+    tf.add_to_collection('targets', T)
 
     # set up
     global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -90,9 +92,7 @@ def main(_):
         # ability to reconstruct data, MI with data, ???,
         variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier')
         sess.run(tf.variables_initializer(variables))
-        # TODO what if I want to jointly train for validation but then reset to
-        # previos values? could use a checkpoint to restore from after training.
-        # NOTE. this is closer to what we actually want.
+
 
         # a different subset every time we validate?!?
         # idx = np.random.randint(0, len(train_labels), FLAGS.N_labels)
@@ -189,8 +189,7 @@ def main(_):
 
         for e in range(FLAGS.epochs):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-                step, L, _ = sess.run([global_step, unsupervised_loss,
-                                       pretrain_step if FLAGS.pretrain else None],
+                step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
                                       {x: batch_ims})
                 print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='', flush=True)
 
