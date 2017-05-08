@@ -48,16 +48,17 @@ def main(_):
         hidden = encoder(x)
         unsupervised_loss = tf.add_n([get_loss_fn(name)(hidden, 1.0)
                                       for name in FLAGS.loss_fn.split('-')])
-        pretrain_step = main_opt.minimize(unsupervised_loss, global_step=global_step,
-              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope.name))
 
     with tf.variable_scope('classifier') as scope:
         logits = classifier(hidden)
         discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
-        train_step = classifier_opt.minimize(discrim_loss,
-              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope.name))
 
-    e2e_step = e2e_opt.minimize(discrim_loss)
+    with tf.variable_scope('optimisers') as scope:
+        pretrain_step = main_opt.minimize(unsupervised_loss, global_step=global_step,
+              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='representation'))
+        train_step = classifier_opt.minimize(discrim_loss,
+              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier'))
+        e2e_step = e2e_opt.minimize(discrim_loss)
 
     with tf.name_scope('metrics'):
         preds = tf.argmax(tf.nn.softmax(logits), axis=-1)
@@ -104,7 +105,7 @@ def main(_):
                                                     FLAGS.batchsize):
                 L, _ = sess.run([discrim_loss, train_step],
                                 {x: batch_ims, T: batch_labels})
-            print('\rvalid: train step: {} loss: {:.5f}'.format(e, L), end='', flush=True)
+            print('\rvalid: train step: {} loss: {:.5f}'.format(e, L), end='')
             summ = sess.run(valid_summary, {x: batch_ims, T: batch_labels})
             writer.add_summary(summ, e+FLAGS.valid_epochs*step//100)
 
@@ -137,7 +138,7 @@ def main(_):
                                                     FLAGS.batchsize):
                 L, _ = sess.run([discrim_loss, e2e_step],
                                 {x: batch_ims, T: batch_labels})
-            print('\rvalid: train step: {} loss: {:.5f}'.format(e, L), end='', flush=True)
+            print('\rvalid: train step: {} loss: {:.5f}'.format(e, L), end='')
             summ = sess.run(valid_summary, {x: batch_ims, T: batch_labels})
             writer.add_summary(summ, e+FLAGS.valid_epochs*step//100)
 
@@ -191,7 +192,7 @@ def main(_):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
                 step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
                                       {x: batch_ims})
-                print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='', flush=True)
+                print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='')
 
                 if step%20==0:
                     summ = sess.run(train_summary, {x: batch_ims})

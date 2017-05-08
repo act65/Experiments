@@ -1,11 +1,15 @@
+from __future__ import print_function
+
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+import sonnet as snt
 from tensorflow.contrib.tensorboard.plugins import projector
 
 from sklearn.utils import shuffle
 import os
 
 import numpy as np
+import copy
 
 ################################################################################
 # TODO. would be nicer if these were sonnet modules?!
@@ -16,66 +20,16 @@ def classifier(x):
 
 
 def encoder(x):
-    with tf.variable_scope('convnet'):
-        channel_sizes = [(16, 2), (32, 2)]
-        with slim.arg_scope([slim.conv2d],
-                            activation_fn=tf.nn.relu,
-                            weights_initializer=tf.orthogonal_initializer(),
-                            biases_initializer=tf.constant_initializer(0.0)):
-
-            return slim.stack(x, slim.conv2d, [(k, (3, 3), (s, s), 'SAME')
-                                            for k, s in channel_sizes])
+    args = [(16, 2), (32, 2), (64, 2)]
+    convs = [snt.Conv2D(d, 3, stride=s) for d, s in args]
+    E = snt.Sequential(convs)
+    D = snt.Sequential([c.transpose() for c in reversed(convs)])
+    tf.add_to_collection('decoder', D)
+    return E(x)
 
 def decoder(x):
-    with tf.variable_scope('deconvnet'):
-        channel_sizes = [(16, 2), (32, 2)]
-        with slim.arg_scope([deconv2d],
-                            activation_fn=tf.nn.relu,
-                            weights_initializer=tf.orthogonal_initializer(),
-                            biases_initializer=tf.constant_initializer(0.0)):
-
-            fmap = slim.stack(x, deconv2d, [(k, (3, 3), s, 'SAME')
-                                            for k, s in channel_sizes])
-        outputs = slim.conv2d(fmap, 1, (1, 1), (1,1), 'SAME',
-                              activation_fn=None,
-                              weights_initializer=tf.orthogonal_initializer(),
-                              biases_initializer=tf.constant_initializer(0.0))
-        return outputs
-
-
-@slim.add_arg_scope
-def deconv2d(x, num_outputs=None, kernel_size=None, stride=None, padding='SAME',
-           shape=None, activation_fn=None, scope='', method='upsample',
-           resize_method=tf.image.ResizeMethod.BILINEAR, weights_initializer=None,
-           biases_initializer=None, normalizer_fn=None, normalizer_params=None,
-           **kwargs):
-    """
-    Upsample-conv method for deconvolution.
-    See http://distill.pub/2016/deconv-checkerboard/ for more details.
-
-    Args:
-        x (tensor): An image, shape `[batch, height, width, k]`
-        channels (int): the number of output feature maps
-        shape: a tuple of ints. (new_width, new_height)
-
-    Returns:
-        - An image. [batch, shape[0], shape[1], channels]
-    """
-    with tf.variable_scope(scope or 'deconv'):
-        if shape is not None:  # if provided a target shape
-            x = tf.image.resize_images(
-                x, shape[1:3] if len(shape) == 4 else shape, method=resize_method)
-        else:  # else just use the stride
-            shape = x.get_shape().as_list()
-            # TODO. this is not robust to input shapes not to the power of 2
-            h = shape[1]*stride #(shape[1]-kernel_size[0])*stride + 2
-            w = shape[2]*stride
-            x = tf.image.resize_images(
-                x, [h, w], method=resize_method)
-            return slim.conv2d(x, num_outputs=num_outputs, kernel_size=kernel_size, stride=[1, 1],
-                               padding=padding, scope='deconv'+scope,
-                               activation_fn=activation_fn, **kwargs)
-
+    D = tf.get_collection('decoder')[0]
+    return D(x)
 
 ################################################################################
 
@@ -144,7 +98,8 @@ def save_embeddings(logdir, embeddings, labels, images=None):
 
         saver = tf.train.Saver(var_list=[embed_var])
         writer = tf.summary.FileWriter(logdir, sess.graph)
-        os.makedirs(logdir, exist_ok=True)
+        if not os.path.exists(logdir):
+            os.makedirs(logdir) #, exist_ok=True)
         fname = saver.save(sess, os.path.join(logdir, 'model.ckpt'),
                            write_meta_graph=False)
 
@@ -193,7 +148,7 @@ def save_images(logdir, images, sess):
                 img = np.zeros_like(images[0, ...])
             img_index += 1
             column.append(img)
-        all_pics.append(column.copy())
+        all_pics.append(copy.deepcopy(column))
     all_pics = [np.concatenate(col, axis=1) for col in all_pics]
     all_pics = np.concatenate(all_pics, axis=0)
     img_tensor = 1.0 - tf.constant(all_pics)
