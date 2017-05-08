@@ -116,12 +116,17 @@ def kl(inputs, scale):
 
 def orth(inputs, scale, normalise=False, summarise=True,
                            name='orthogonal_regulariser'):
-    """Regulariser to enourage a batch of things to be orthonormal.
+    """
+    Regulariser to enourage a batch of things to be orthonormal.
     Aka, let x be [batch, -1] flattened version of inputs,
     we return ||xx^T - I||^2
 
     Note that due to the reshaping required this will only work if the batch
     size is defined.
+
+    Closely related to cross correlation regularisation
+    - [DeCov](https://arxiv.org/pdf/1511.06068.pdf) and
+    - [Xcov](https://arxiv.org/pdf/1412.6583.pdf)
 
     Args:
         inputs: tensor of inputs, can be any shape as long as the batch is the
@@ -139,6 +144,8 @@ def orth(inputs, scale, normalise=False, summarise=True,
     Returns:
         scalar tensor holding the value to minimise.
     """
+    # NOTE It will be easier to make vectors orthogonal when in higher
+    # dimensional spaces. Exponentially easier?!
     with tf.name_scope(name):
         batch_size = inputs.get_shape().as_list()[0]
         inputs = tf.reshape(inputs, [batch_size, -1])

@@ -4,11 +4,22 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 from sklearn.utils import shuffle
 import os
+import losses
 
 import numpy as np
 
+
+def get_loss_fn(name):
+    if name == 'siamese':
+        return losses.siamese
+    if name == 'orth':
+        return losses.orth
+
+
+################################################################################
+# TODO. would be nicer if these were sonnet modules?!
 def encoder(x):
-    with tf.variable_scope('encoder'):
+    with tf.variable_scope('convnet'):
         channel_sizes = [(16, 2), (32, 2), (64, 2)]
         with slim.arg_scope([slim.conv2d],
                             activation_fn=tf.nn.relu,
@@ -19,10 +30,23 @@ def encoder(x):
                                             for k, s in channel_sizes])
             return tf.reduce_mean(fmap, axis=[1,2])
 
+def decoder(x):
+    with tf.variable_scope('deconvnet'):
+        channel_sizes = [(16, 2), (32, 2), (10, 2)]
+        with slim.arg_scope([slim.conv2d],
+                            activation_fn=tf.nn.relu,
+                            weights_initializer=tf.orthogonal_initializer(),
+                            biases_initializer=tf.constant_initializer(0.0)):
+
+            fmap = slim.stack(x, slim.conv2d, [(k, (3, 3), (s, s), 'SAME')
+                                            for k, s in channel_sizes])
+            return tf.reduce_mean(fmap, axis=[1,2])
+
 def classifier(x):
-    with tf.variable_scope('classifier'):
+    with tf.variable_scope('fc'):
         return slim.fully_connected(x, 10, activation_fn=None)
 
+################################################################################
 
 def batch(ims, labels, batchsize):
     ims, labels = shuffle(ims, labels)
@@ -30,6 +54,51 @@ def batch(ims, labels, batchsize):
     for i in range(len(labels)//batchsize):
         yield (i, ims[i*batchsize:(i+1)*batchsize, ...],
                   labels[i*batchsize:(i+1)*batchsize, ...])
+
+
+### Choose a subset of classes to train and validate on
+# def subset(x, y):
+#     zeros = x == 0
+#     ones = x == 1
+#     twos = x == 2
+#     return (np.concatenate([x[zeros], x[ones], x[twos]]),
+#             np.concatenate([y[zeros], y[ones], y[twos]]))
+# train_labels, train_ims = subset(labels, ims)
+# valid_labels, valid_ims = subset(test_labels, test_ims)
+
+### Choose a single class for binary classification
+# def binarise(x, n=4):
+#     y = x.copy()
+#     y[y!=n] = 0
+#     y[y==n] = 1
+#     return y
+# train_labels = binarise(labels)
+# valid_labels = binarise(test_labels)
+# train_ims = ims; valid_ims = test_ims
+
+################################################################################
+
+
+def validate(sess, writer, step, x, T, valid_ims, valid_labels, batchsize):
+    ### Validate classifier
+    metrics = tf.get_collection('METRICS')
+    updates = tf.get_collection('METRIC_UPDATES')
+    variables = tf.get_collection('LOCAL_VARIABLES', scope='metrics')
+    sess.run(tf.variables_initializer(variables))
+
+    # eval and aggregate
+    for _, batch_ims, batch_labels in batch(valid_ims, valid_labels, batchsize):
+        sess.run(updates, {x: batch_ims, T: batch_labels})
+    values = sess.run(metrics, {x: batch_ims, T: batch_labels})
+
+    # write summary
+    for k, v in zip(metrics, values):
+        summ = tf.Summary(value=[tf.Summary.Value(tag='valid/' + k.name,
+                                                  simple_value=float(v))])
+        writer.add_summary(summ, step)
+
+
+################################################################################
 
 def save_embeddings(logdir, embeddings, labels, images=None):
     """
