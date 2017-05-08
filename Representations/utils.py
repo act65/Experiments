@@ -12,16 +12,19 @@ import numpy as np
 import copy
 
 ################################################################################
-# TODO. would be nicer if these were sonnet modules?!
 def classifier(x):
-    with tf.variable_scope('fc'):
-        x = tf.reduce_mean(x, axis=[1,2])
-        return slim.fully_connected(x, 10, activation_fn=None)
-
+    x = tf.reduce_mean(x, axis=[1,2])
+    init = {'w': tf.orthogonal_initializer(),
+            'b': tf.constant_initializer(0.0)}
+    net = snt.Linear(10, initializers=init)
+    return net(x)
 
 def encoder(x):
     args = [(16, 2), (32, 2), (64, 2)]
-    convs = [snt.Conv2D(d, 3, stride=s) for d, s in args]
+    init = {'w': tf.orthogonal_initializer(),
+            'b': tf.constant_initializer(0.0)}
+    convs = [snt.Conv2D(d, 3, stride=s, initializers=init)
+             for d, s in args]
     E = snt.Sequential(convs)
     D = snt.Sequential([c.transpose() for c in reversed(convs)])
     tf.add_to_collection('decoder', D)
