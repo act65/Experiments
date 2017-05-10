@@ -135,9 +135,13 @@ def orth(inputs, scale, normalise=False, summarise=True,
     Note that due to the reshaping required this will only work if the batch
     size is defined.
 
-    Closely related to cross correlation regularisation
-    - [DeCov](https://arxiv.org/pdf/1511.06068.pdf) and
-    - [Xcov](https://arxiv.org/pdf/1412.6583.pdf)
+    Closely related to:
+        - cross correlation regularisation
+            - [DeCov](https://arxiv.org/pdf/1511.06068.pdf) and
+            - [Xcov](https://arxiv.org/pdf/1412.6583.pdf)
+        - negative sampling. [word2vec](https://arxiv.org/pdf/1402.3722v1.pdf)
+            maximises/minimises similarity (measured by cosine distance).
+            The negative sample is the rest of the batch.
 
     Args:
         inputs: tensor of inputs, can be any shape as long as the batch is the
@@ -155,8 +159,6 @@ def orth(inputs, scale, normalise=False, summarise=True,
     Returns:
         scalar tensor holding the value to minimise.
     """
-    # NOTE It will be easier to make vectors orthogonal when in higher
-    # dimensional spaces. Exponentially easier?!
     with tf.name_scope(name):
         inputs = tf.reduce_mean(inputs, axis=[1,2])
         batch_size = inputs.get_shape().as_list()[0]
