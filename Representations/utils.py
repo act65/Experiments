@@ -12,8 +12,10 @@ import numpy as np
 import copy
 
 ################################################################################
-def classifier(x):
+def classifier(x, normalize=False):
     x = tf.reduce_mean(x, axis=[1,2])
+    if normalize:
+        x = tf.nn.l2_normalize(x, -1)
     init = {'w': tf.orthogonal_initializer(),
             'b': tf.constant_initializer(0.0)}
     net = snt.Linear(10, initializers=init)

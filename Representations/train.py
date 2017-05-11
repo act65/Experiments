@@ -12,6 +12,8 @@ import os
 from utils import *
 from losses import get_loss_fn
 
+from sklearn.utils import shuffle
+
 tf.app.flags.DEFINE_string('logdir', '/tmp/test', 'location for saved embeedings')
 tf.app.flags.DEFINE_string('datadir', '/tmp/mnist', 'location for data')
 tf.app.flags.DEFINE_integer('batchsize', 50, 'batch size.')
@@ -29,6 +31,8 @@ def main(_):
     mnist = input_data.read_data_sets(FLAGS.datadir, one_hot=False)
     ims = np.reshape(mnist.train.images, [-1, 28, 28, 1]).astype(np.float32)
     labels = np.reshape(mnist.train.labels, [-1]).astype(np.int64)
+    ims, labels = shuffle(ims, labels)
+    # TODO. this makes it harder to compare. unless we do multiple runs
 
     test_ims = np.reshape(mnist.test.images, [-1, 28, 28, 1]).astype(np.float32)
     test_labels = np.reshape(mnist.test.labels, [-1]).astype(np.int64)
@@ -40,6 +44,7 @@ def main(_):
 
     # set up
     global_step = tf.Variable(0, name='global_step', trainable=False)
+    global_step = global_step.assign_add(1)
     main_opt = tf.train.AdamOptimizer(FLAGS.lr)
     e2e_opt = tf.train.AdamOptimizer(FLAGS.valid_lr)
     classifier_opt = tf.train.AdamOptimizer(FLAGS.valid_lr)
@@ -57,7 +62,7 @@ def main(_):
 
     with tf.variable_scope('optimisers') as scope:
         pretrain_step = main_opt.minimize(
-              unsupervised_loss, global_step=global_step,
+              unsupervised_loss,
               var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                          scope='representation'))
         train_step = classifier_opt.minimize(discrim_loss,
@@ -190,19 +195,26 @@ def main(_):
         for e in range(FLAGS.epochs):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
                 step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
-                                      {x: batch_ims})
+                                      {x: batch_ims, T: batch_labels})
                 print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='')
 
+                # semi-supervised learning
+                # TODO. want a better way to sample labels
+                idx = np.random.randint(0, FLAGS.N_labels, FLAGS.batchsize)
+                _ = sess.run(e2e_step, {x: ims[idx], T: labels[idx]})
+
                 if step%20==0:
-                    summ = sess.run(pretrain_summary, {x: batch_ims})
+                    summ = sess.run(pretrain_summary, {x: batch_ims, T: batch_labels})
                     writer.add_summary(summ, step)
 
                 if step%100==0:
-                    pretrained_endtoend(sess, writer, saver, step)
-                    freeze_pretrain(sess, writer, step)
+                    # pretrained_endtoend(sess, writer, saver, step)
+                    # freeze_pretrain(sess, writer, step)
+                    validate(sess, writer, step, x, T, test_ims, test_labels,
+                             FLAGS.batchsize, name='super')
 
-                if step%10000==1:
-                    embed(sess, step-1)
+                # if step%10000==1:
+                #     embed(sess, step-1)
 
 if __name__ == '__main__':
     tf.app.run()

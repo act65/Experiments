@@ -3,13 +3,9 @@ http://www.inference.vc/unsupervised-learning-by-predicting-noise-an-information
 
 
 TODO. rework train script into class.
-use different training methods. ls vs gd.
-different ways to validate.
-
-
-
-TODO. actualy cross entropy. what actual discriminative loss...
+TODO. use different training methods. ls vs gd.
 TODO. what if we do orthogonal outputs and orthogonal weights?
+TODO. semisupervised
 
 
 3 different settings
