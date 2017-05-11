@@ -72,7 +72,7 @@ def main(_):
                                   updates_collections='METRIC_UPDATES')
 
     # summaries
-    train_summary = tf.summary.scalar('pretraining', unsupervised_loss)
+    pretrain_summary = tf.summary.scalar('pretraining', unsupervised_loss)
 
 ################################################################################
     """
@@ -194,7 +194,7 @@ def main(_):
                 print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='')
 
                 if step%20==0:
-                    summ = sess.run(train_summary, {x: batch_ims})
+                    summ = sess.run(pretrain_summary, {x: batch_ims})
                     writer.add_summary(summ, step)
 
                 if step%100==0:

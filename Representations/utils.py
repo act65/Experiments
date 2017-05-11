@@ -81,7 +81,7 @@ def validate(sess, writer, step, x, T, valid_ims, valid_labels, batchsize, name=
 
     # write summary
     for k, v in zip(metrics, values):
-        add_summary(writer, step, 'valid/'+name+'/'+ k.name, float(v))
+        add_summary(writer, step, 'valid/'+name, float(v))
 
 def add_summary(writer, step, name, val):
     summ = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=val)])
@@ -96,8 +96,8 @@ def save_embeddings(logdir, embeddings, labels, images=None):
         labels: a numpy array of int32's. (10000,)
     """
     with tf.Graph().as_default() as g:
-        sess = tf.Session()
         embed_var = tf.Variable(embeddings, name='embeddings')
+        sess = tf.Session()
         sess.run(embed_var.initializer)
 
         saver = tf.train.Saver(var_list=[embed_var])
