@@ -25,8 +25,10 @@ def encoder(x):
             'b': tf.constant_initializer(0.0)}
     convs = [snt.Conv2D(d, 3, stride=s, initializers=init)
              for d, s in args]
-    E = snt.Sequential(convs)
-    D = snt.Sequential([c.transpose() for c in reversed(convs)])
+    E = snt.Sequential([f for c in convs for f in (c, tf.nn.relu)])
+    D = snt.Sequential([f for c in reversed(convs[1:])
+                        for f in (c.transpose(), tf.nn.relu)]
+                       + [convs[0].transpose()])
     tf.add_to_collection('decoder', D)
     return E(x)
 
