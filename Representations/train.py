@@ -20,6 +20,7 @@ tf.app.flags.DEFINE_integer('valid_epochs', 50, 'number of times through dataset
                             'validation training.')
 tf.app.flags.DEFINE_integer('N_labels', 200, 'number of labels to train on')
 tf.app.flags.DEFINE_float('lr', 0.0001, 'learning rate.')
+tf.app.flags.DEFINE_float('valid_lr', 0.0001, 'learning rate.')
 tf.app.flags.DEFINE_string('loss_fn', 'orth', 'loss function for pretraining')
 FLAGS = tf.app.flags.FLAGS
 
@@ -40,8 +41,8 @@ def main(_):
     # set up
     global_step = tf.Variable(0, name='global_step', trainable=False)
     main_opt = tf.train.AdamOptimizer(FLAGS.lr)
-    e2e_opt = tf.train.AdamOptimizer(FLAGS.lr)
-    classifier_opt = tf.train.AdamOptimizer(0.01)
+    e2e_opt = tf.train.AdamOptimizer(FLAGS.valid_lr)
+    classifier_opt = tf.train.AdamOptimizer(FLAGS.valid_lr)
 
     # build the model
     with tf.variable_scope('representation') as scope:
@@ -51,13 +52,17 @@ def main(_):
 
     with tf.variable_scope('classifier') as scope:
         logits = classifier(hidden)
-        discrim_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
+        discrim_loss = tf.reduce_mean(
+    tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
 
     with tf.variable_scope('optimisers') as scope:
-        pretrain_step = main_opt.minimize(unsupervised_loss, global_step=global_step,
-              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='representation'))
+        pretrain_step = main_opt.minimize(
+              unsupervised_loss, global_step=global_step,
+              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                         scope='representation'))
         train_step = classifier_opt.minimize(discrim_loss,
-              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier'))
+              var_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                         scope='classifier'))
         e2e_step = e2e_opt.minimize(discrim_loss)
 
     with tf.name_scope('metrics'):
@@ -68,7 +73,6 @@ def main(_):
 
     # summaries
     train_summary = tf.summary.scalar('pretraining', unsupervised_loss)
-    valid_summary = tf.summary.scalar('training', discrim_loss)
 
 ################################################################################
     """
@@ -91,7 +95,8 @@ def main(_):
         ### Train new classifier
         # TODO. what if we also want to validate on other tasks? such as;
         # ability to reconstruct data, MI with data, ???,
-        variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='classifier')
+        variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                      scope='classifier')
         sess.run(tf.variables_initializer(variables))
 
 
@@ -106,11 +111,8 @@ def main(_):
                 L, _ = sess.run([discrim_loss, train_step],
                                 {x: batch_ims, T: batch_labels})
             print('\rvalid: train step: {} loss: {:.5f}'.format(e, L), end='')
-            summ = sess.run(valid_summary, {x: batch_ims, T: batch_labels})
-            writer.add_summary(summ, e+FLAGS.valid_epochs*step//100)
-
-
-        validate(sess, writer, step, x, T, valid_ims, valid_labels, FLAGS.batchsize)
+            add_summary(writer, e+FLAGS.valid_epochs*step//100, 'valid-train/freeze', L)
+        validate(sess, writer, step, x, T, valid_ims, valid_labels, FLAGS.batchsize, name='freeze')
 
     def pretrained_endtoend(sess, writer, saver, step):
         """
@@ -139,11 +141,8 @@ def main(_):
                 L, _ = sess.run([discrim_loss, e2e_step],
                                 {x: batch_ims, T: batch_labels})
             print('\rvalid: train step: {} loss: {:.5f}'.format(e, L), end='')
-            summ = sess.run(valid_summary, {x: batch_ims, T: batch_labels})
-            writer.add_summary(summ, e+FLAGS.valid_epochs*step//100)
-
-
-        validate(sess, writer, step, x, T, valid_ims, valid_labels, FLAGS.batchsize)
+            add_summary(writer, e+FLAGS.valid_epochs*step//100, 'valid-train/e2e', L)
+        validate(sess, writer, step, x, T, valid_ims, valid_labels, FLAGS.batchsize, name='e2e')
         # restore original variables to continue pretrianing
         ckpt = tf.train.latest_checkpoint(FLAGS.logdir)
         saver.restore(sess, ckpt)
@@ -200,6 +199,7 @@ def main(_):
 
                 if step%100==0:
                     pretrained_endtoend(sess, writer, saver, step)
+                    freeze_pretrain(sess, writer, step)
 
                 if step%10000==1:
                     embed(sess, step-1)

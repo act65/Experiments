@@ -67,7 +67,7 @@ def batch(ims, labels, batchsize):
 ################################################################################
 
 
-def validate(sess, writer, step, x, T, valid_ims, valid_labels, batchsize):
+def validate(sess, writer, step, x, T, valid_ims, valid_labels, batchsize, name=''):
     ### Validate classifier
     metrics = tf.get_collection('METRICS')
     updates = tf.get_collection('METRIC_UPDATES')
@@ -81,10 +81,11 @@ def validate(sess, writer, step, x, T, valid_ims, valid_labels, batchsize):
 
     # write summary
     for k, v in zip(metrics, values):
-        summ = tf.Summary(value=[tf.Summary.Value(tag='valid/' + k.name,
-                                                  simple_value=float(v))])
-        writer.add_summary(summ, step)
+        add_summary(writer, step, 'valid/'+name+'/'+ k.name, float(v))
 
+def add_summary(writer, step, name, val):
+    summ = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=val)])
+    writer.add_summary(summ, step)
 
 ################################################################################
 
