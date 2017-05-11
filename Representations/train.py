@@ -51,12 +51,12 @@ def main(_):
 
     # build the model
     with tf.variable_scope('representation') as scope:
-        hidden = encoder(x)
-        unsupervised_loss = tf.add_n([get_loss_fn(name)(hidden, 1.0)
+        hidden = encoder(x) # TODO hidden should be [batch, N] embeddings
+        unsupervised_loss = tf.add_n([get_loss_fn(name, hidden)
                                       for name in FLAGS.loss_fn.split('-')])
 
     with tf.variable_scope('classifier') as scope:
-        logits = classifier(hidden)
+        logits = classifier(tf.reduce_mean(hidden, [1,2]))
         discrim_loss = tf.reduce_mean(
     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T))
 

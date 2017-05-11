@@ -1,13 +1,13 @@
 import tensorflow as tf
 from utils import *
 
-def get_loss_fn(name):
+def get_loss_fn(name, h):
     if name == 'siamese':
-        return siamese
+        return siamese(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'orth':
-        return orth
+        return orth(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'ae':
-        return ae
+        return ae(h)
 
 def spherical_noise(shape):
     # how to get uniformly distributed noise on a ball?
@@ -62,7 +62,6 @@ def siamese(inputs, scale):
     # NOTE. How is this and orthogonal regularisation different?
     # But are minimising 1 - the distance between datapoints.
     with tf.name_scope('equidist_regulariser'):
-        inputs = tf.reduce_mean(inputs, axis=[1,2])
         batch_size = tf.shape(inputs)[0]
         diff = tf.expand_dims(inputs, 0) - tf.expand_dims(inputs, 1)
         similarities = tf.sqrt(1e-8+tf.reduce_mean(tf.square(diff), axis=-1))
@@ -161,7 +160,6 @@ def orth(inputs, scale, normalise=False, summarise=True,
     # NOTE It will be easier to make vectors orthogonal when in higher
     # dimensional spaces. Exponentially easier?!
     with tf.name_scope(name):
-        inputs = tf.reduce_mean(inputs, axis=[1,2])
         batch_size = inputs.get_shape().as_list()[0]
         inputs = tf.reshape(inputs, [batch_size, -1])
         if normalise:

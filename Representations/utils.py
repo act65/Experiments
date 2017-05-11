@@ -13,28 +13,33 @@ import copy
 
 ################################################################################
 def classifier(x, normalize=False):
-    x = tf.reduce_mean(x, axis=[1,2])
     if normalize:
         x = tf.nn.l2_normalize(x, -1)
     init = {'w': tf.orthogonal_initializer(),
             'b': tf.constant_initializer(0.0)}
-    net = snt.Linear(10, initializers=init)
+    args = [64, 32]
+    layers = [f for i in args
+              for f in (snt.Linear(i, initializers=init), tf.nn.relu)]
+    layers += snt.Linear(10, initializers=init)
+    net = snt.Sequential(layers)
     return net(x)
 
 def encoder(x):
     args = [(32, 2), (64, 2), (128, 2)]
     init = {'w': tf.orthogonal_initializer(),
             'b': tf.constant_initializer(0.0)}
-    convs = [snt.Conv2D(d, 3, stride=s, initializers=init)
+
+    layers = [snt.Conv2D(d, 3, stride=s, initializers=init)
              for d, s in args]
-    E = snt.Sequential([f for c in convs for f in (c, tf.nn.relu)])
-    D = snt.Sequential([f for c in reversed(convs[1:])
-                        for f in (c.transpose(), tf.nn.relu)]
-                       + [convs[0].transpose()])
+    E = snt.Sequential([f for l in layers for f in (l, tf.nn.relu)])
+    D = snt.Sequential([f for l in reversed(layers[1:])
+                        for f in (l.transpose(), tf.nn.relu)]
+                       + [layers[0].transpose()])
     tf.add_to_collection('decoder', D)
     return E(x)
 
 def decoder(x):
+    # TODO. should fix this.
     D = tf.get_collection('decoder')[0]
     return D(x)
 
