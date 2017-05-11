@@ -22,7 +22,7 @@ def classifier(x, normalize=False):
     return net(x)
 
 def encoder(x):
-    args = [(16, 2), (32, 2), (64, 2)]
+    args = [(32, 2), (64, 2), (128, 2)]
     init = {'w': tf.orthogonal_initializer(),
             'b': tf.constant_initializer(0.0)}
     convs = [snt.Conv2D(d, 3, stride=s, initializers=init)

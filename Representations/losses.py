@@ -139,6 +139,9 @@ def orth(inputs, scale, normalise=False, summarise=True,
     - [DeCov](https://arxiv.org/pdf/1511.06068.pdf) and
     - [Xcov](https://arxiv.org/pdf/1412.6583.pdf)
 
+    This is (almost) the same as regularising the weights, but way cheaper.
+    If W is orthogonal (and x is orthogonal) then, if y=Wx, y is orthogonal.
+
     Args:
         inputs: tensor of inputs, can be any shape as long as the batch is the
             first dimension.

@@ -77,7 +77,9 @@ def main(_):
                                   updates_collections='METRIC_UPDATES')
 
     # summaries
-    pretrain_summary = tf.summary.scalar('pretraining', unsupervised_loss)
+    pretrain_summary = tf.summary.scalar('unsupervised', unsupervised_loss)
+    discrim_summary = tf.summary.scalar('supervised', discrim_loss)
+    loss_summaries = tf.summary.merge([pretrain_summary, discrim_summary])
 
 ################################################################################
     """
@@ -194,7 +196,7 @@ def main(_):
 
         for e in range(FLAGS.epochs):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-                step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
+                step, L = sess.run([global_step, unsupervised_loss], #, pretrain_step],
                                       {x: batch_ims, T: batch_labels})
                 print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='')
 
@@ -202,9 +204,11 @@ def main(_):
                 # TODO. want a better way to sample labels
                 idx = np.random.randint(0, FLAGS.N_labels, FLAGS.batchsize)
                 _ = sess.run(e2e_step, {x: ims[idx], T: labels[idx]})
+                # TODO. how does running the update together effect things?
+                # what about elastic weights updates?
 
                 if step%20==0:
-                    summ = sess.run(pretrain_summary, {x: batch_ims, T: batch_labels})
+                    summ = sess.run(loss_summaries, {x: batch_ims, T: batch_labels})
                     writer.add_summary(summ, step)
 
                 if step%100==0:
