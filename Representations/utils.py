@@ -20,7 +20,7 @@ def classifier(x, normalize=False):
     args = [64, 32]
     layers = [f for i in args
               for f in (snt.Linear(i, initializers=init), tf.nn.relu)]
-    layers += snt.Linear(10, initializers=init)
+    layers += [snt.Linear(10, initializers=init)]
     net = snt.Sequential(layers)
     return net(x)
 

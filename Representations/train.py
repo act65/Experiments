@@ -196,7 +196,7 @@ def main(_):
 
         for e in range(FLAGS.epochs):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-                step, L = sess.run([global_step, unsupervised_loss], #, pretrain_step],
+                step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
                                       {x: batch_ims, T: batch_labels})
                 print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='')
 
