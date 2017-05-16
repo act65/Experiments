@@ -6,6 +6,8 @@ import munkres
 def get_loss_fn(name, h):
     if name == 'siamese':
         return siamese(tf.reduce_mean(h, [1,2]), 1.0)
+    if name == 'spaced':
+        return spaced(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'orth':
         return orth(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'ae':
@@ -13,7 +15,7 @@ def get_loss_fn(name, h):
     if name == 'nat':
         return nat(tf.reduce_mean(h, [1,2]), 1.0)
 
-def nat(inputs, scale, name='noiseastargets'):
+def nat(inputs, scale, normalise=True, name='noiseastargets'):
     """
     [Noise as targets](https://arxiv.org/abs/1704.05310).
     This attempts to train our hidden representation, y, to be similar to a
@@ -23,11 +25,6 @@ def nat(inputs, scale, name='noiseastargets'):
 
     (What about training to be indistinguishable from a uniform distribution? GANs)
     Or using a different measure of distance? MMD
-
-    Args:
-        inputs:
-
-
     """
     # TODO. try without using the matching algorithm!!!
     # TODO. try with different distributions of noise?!
@@ -37,6 +34,15 @@ def nat(inputs, scale, name='noiseastargets'):
     def spherical_noise(shape):
         with tf.name_scope('spherical_noise'):
             z = tf.random_uniform(shape=shape, dtype=tf.float32)
+            return tf.nn.l2_normalize(z, -1)
+
+    def spherical_variable_noise(shape):
+        # a version of noise that gets updated only when called.
+        with tf.name_scope('spherical_var_noise'):
+            z = tf.get_variable(name='noise_var', trainable=False,
+                                initializer=tf.random_normal_initializer(),
+                                shape=[shape[1], shape[1]], dtype=tf.float32)
+            tf.add_to_collection('random_vars', z)
             return tf.nn.l2_normalize(z, -1)
 
     def hungarian_matching(h, z):
@@ -58,14 +64,14 @@ def nat(inputs, scale, name='noiseastargets'):
             Returns:
                 list: new pairings
             """
-            # TODO. this is WAY TOO slow
+            # TODO. this is WAY TOO slow. but maybe its just the hungarian algol?
             assignments = M.compute(C)
             return np.array(zip(*assignments))
 
         def cost_fn(x, y):
             with tf.name_scope('matching_cost'):
-                return tf.reduce_mean((tf.expand_dims(x, 0) -
-                                       tf.expand_dims(y, 1))**2, axis=2)
+                return tf.reduce_mean((tf.expand_dims(x, 1) -
+                                       tf.expand_dims(y, 0))**2, axis=2)
 
         with tf.name_scope('matching'):
             C = cost_fn(h , z)
@@ -74,11 +80,17 @@ def nat(inputs, scale, name='noiseastargets'):
             return tf.gather(h, idx[0]), tf.gather(z, idx[1])
 
     with tf.name_scope(name):
-        z = spherical_noise(inputs.get_shape())
+        z = spherical_variable_noise(inputs.get_shape())
         features, targets = hungarian_matching(inputs, z)
+        if normalise:
+            features = tf.nn.l2_normalize(features, -1)
         return scale*tf.reduce_mean(tf.square(features - targets))
 
-def siamese(inputs, scale):
+def pairwise_l2_dist(x, y):
+    diff = tf.expand_dims(x, 0) - tf.expand_dims(y, 1)
+    return tf.sqrt(1e-8+tf.reduce_mean(tf.square(diff), axis=-1))
+
+def spaced(inputs, scale, name='equalspaced'):
     """
     Want each datapoint to be a distance of 1 away form every other datapoint.
 
@@ -87,20 +99,37 @@ def siamese(inputs, scale):
     Or just use the whole rest of the batch?!
 
     min sum_i sum_j 1-d(x_i, y_i))
-
     """
+
     # NOTE. How is this and orthogonal regularisation different?
     # But are minimising 1 - the distance between datapoints.
-    with tf.name_scope('equidist_regulariser'):
+    with tf.name_scope(name):
         batch_size = tf.shape(inputs)[0]
-        diff = tf.expand_dims(inputs, 0) - tf.expand_dims(inputs, 1)
-        similarities = tf.sqrt(1e-8+tf.reduce_mean(tf.square(diff), axis=-1))
-        targets = 1-tf.eye(batch_size)
-        loss_val = scale*tf.reduce_mean(tf.square(targets-similarities))
+        distances = pairwise_l2_dist(inputs, inputs)
+        targets = 1 - tf.eye(batch_size)
+        loss_val = scale*tf.reduce_mean(tf.square(targets-distances))
 
         return loss_val
 
-def gan(inputs, scale):
+def siamese(inputs, scale, name='siamese'):
+    """
+    Inputs that are similar should be mapped to outputs that are similar.
+    L2 doesnt seem like the right measure for this...
+    """
+    with tf.name_scope(name):
+        x = tf.reduce_mean(tf.get_collection('inputs')[0], axis=[1,2])
+        distances = pairwise_l2_dist(inputs, inputs)
+        targets = pairwise_l2_dist(x, x)
+        return scale*tf.reduce_mean(tf.square(targets-distances))
+
+def cluster(inputs, scale, name='cluster'):
+    """
+    A loss that encourages close points to be closer.
+    """
+    with tf.name_scope(name):
+        return 1
+
+def gan(inputs, scale, name='gan'):
     """
     We have no idea what type of regularisation is a good idea for unsupervised
     pretraining (for discrimination).
@@ -110,12 +139,20 @@ def gan(inputs, scale):
     - disentangled representations (aka ??)
     - ?
     """
+    def discriminator(x):
+        return None
+
+    def adversarial(fake, real):
+        return (tf.reduce_mean(tf.log(fake)),
+                tf.reduce_mean(-tf.log(fake) + tf.log(real)))
+
     with tf.name_scope(name):
         z = spherical_noise(inputs.get_shape())
         fake = discriminator(inputs)
         real = discriminator(z)
 
         loss_val = adversarial(fake, real)
+        # TODO. but we also need to train the discriminator. how?
 
 def ae(inputs, scale, name='autoencoder'):
     """

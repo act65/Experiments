@@ -37,9 +37,9 @@ def main(_):
     test_ims = np.reshape(mnist.test.images, [-1, 28, 28, 1]).astype(np.float32)
     test_labels = np.reshape(mnist.test.labels, [-1]).astype(np.int64)
 
-    x = tf.placeholder(shape=[50, 28, 28, 1], dtype=tf.float32)
+    x = tf.placeholder(shape=[FLAGS.batchsize, 28, 28, 1], dtype=tf.float32)
     tf.add_to_collection('inputs', x)
-    T = tf.placeholder(shape=[50], dtype=tf.int64)
+    T = tf.placeholder(shape=[FLAGS.batchsize], dtype=tf.int64)
     tf.add_to_collection('targets', T)
 
     # set up
@@ -176,11 +176,11 @@ def main(_):
         # get embeddings from tensorflow
         X = []; H = []; L = []
         for i, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
-            if i >= 200: break
+            if i >= 10000//FLAGS.batchsize: break
             # print('\r embed step {}'.format(i), end='', flush=True)
             X.append(batch_ims)
             H.append(sess.run(hidden, feed_dict={x: batch_ims}))
-            L.append(batch_labels.reshape(50))
+            L.append(batch_labels.reshape(FLAGS.batchsize))
 
         save_embeddings(os.path.join(FLAGS.logdir, 'embedding'+str(step)),
                         np.vstack(H),
@@ -207,7 +207,8 @@ def main(_):
                 idx = np.random.randint(0, FLAGS.N_labels, FLAGS.batchsize)
                 _ = sess.run(e2e_step, {x: ims[idx], T: labels[idx]})
                 # TODO. how does running the update together effect things?
-                # what about elastic weights updates?
+                # TODO. what about elastic weight consolidation? treating
+                # semi supervised learning as a type of transfer!?
 
                 if step%20==0:
                     summ = sess.run(loss_summaries, {x: batch_ims, T: batch_labels})
@@ -221,6 +222,10 @@ def main(_):
 
                 if step == 30:
                     trace(run_metadata, FLAGS.logdir)
+
+                # if step%500 == 0:
+                #     var = tf.get_collection('random_vars')[0]
+                #     sess.run(tf.variables_initializer(var))
 
                 # if step%10000==1:
                 #     embed(sess, step-1)
