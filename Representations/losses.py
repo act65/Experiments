@@ -1,6 +1,8 @@
 import tensorflow as tf
 from utils import *
 
+import munkres
+
 def get_loss_fn(name, h):
     if name == 'siamese':
         return siamese(tf.reduce_mean(h, [1,2]), 1.0)
@@ -8,18 +10,10 @@ def get_loss_fn(name, h):
         return orth(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'ae':
         return ae(h)
+    if name == 'nat':
+        return nat(tf.reduce_mean(h, [1,2]), 1.0)
 
-def spherical_noise(shape):
-    # how to get uniformly distributed noise on a ball?
-    z = tf.random_uniform(shape=shape, dtype=tf.float32)
-    return z/tf.reduce_mean(z, axis=-1)
-
-def hungarian_matching(x, y):
-    # https://github.com/tensorflow/tensorflow/pull/3780
-    # could compile binary and add op
-    return x, y
-
-def nat(inputs, scale):
+def nat(inputs, scale, name='noiseastargets'):
     """
     [Noise as targets](https://arxiv.org/abs/1704.05310).
     This attempts to train our hidden representation, y, to be similar to a
@@ -35,10 +29,50 @@ def nat(inputs, scale):
 
 
     """
+    # TODO. try without using the matching algorithm!!!
+
+    def spherical_noise(shape):
+        # how to get uniformly distributed noise on a ball?
+        z = tf.random_uniform(shape=shape, dtype=tf.float32)
+        return z #/tf.reduce_mean(z, axis=-1)
+
+    def hungarian_matching(h, z):
+        """
+        Hungarian matching algorithm. O(n^3)
+
+        Alternative approaches.
+        - could compile binary and add op
+        https://github.com/tensorflow/tensorflow/pull/3780
+        - could just wrap a python op. will be slower. (but easier)
+
+        Args:
+            h, z (tf.Tensor): dtype-tf.float32.
+        """
+        def get_pairings(C):
+            """
+            An implementation using munkres python library and py_wrap.
+            Args:
+                C (np.ndArray): the costs of different pairings
+
+            Returns:
+                list: new pairings
+            """
+            assignments = munkres.Munkres().compute(C)
+            return np.array(zip(*assignments))
+
+        def cost_fn(x, y):
+            return tf.reduce_mean((tf.expand_dims(h, 1) -
+                                   tf.expand_dims(y, -1))**2, axis=0)
+
+        C = cost_fn(h , z)
+        idx = tf.py_func(get_pairings, [C], tf.int64)
+        idx = tf.reshape(idx, [2, tf.shape(h)[-1]])
+        return tf.gather(h, idx[0]), tf.gather(z, idx[1])
+
     with tf.name_scope(name):
         z = spherical_noise(inputs.get_shape())
-        inputs, z = hungarian_matching(inputs, z)
-        return scale*tf.reduce_mean(tf.square(inputs - z))
+        features, targets = hungarian_matching(inputs, z)
+        return scale*tf.reduce_mean(tf.square(features - targets))
 
 def mutual_info(inputs):
     """
