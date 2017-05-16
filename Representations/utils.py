@@ -4,6 +4,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import sonnet as snt
 from tensorflow.contrib.tensorboard.plugins import projector
+from tensorflow.python.client import timeline
 
 from sklearn.utils import shuffle
 import os
@@ -17,7 +18,7 @@ def classifier(x, normalize=False):
         x = tf.nn.l2_normalize(x, -1)
     init = {'w': tf.orthogonal_initializer(),
             'b': tf.constant_initializer(0.0)}
-    args = [64, 32]
+    args = []
     layers = [f for i in args
               for f in (snt.Linear(i, initializers=init), tf.nn.relu)]
     layers += [snt.Linear(10, initializers=init)]
@@ -72,6 +73,27 @@ def batch(ims, labels, batchsize):
 # train_labels = binarise(labels)
 # valid_labels = binarise(test_labels)
 # train_ims = ims; valid_ims = test_ims
+
+################################################################################
+
+def profile():
+    tf.contrib.tfprof.model_analyzer.print_model_analysis(
+    tf.get_default_graph(),
+    tfprof_options=tf.contrib.tfprof.model_analyzer.FLOAT_OPS_OPTIONS)
+
+    tf.contrib.tfprof.model_analyzer.print_model_analysis(
+        tf.get_default_graph(),
+        tfprof_options=tf.contrib.tfprof.model_analyzer.
+            TRAINABLE_VARS_PARAMS_STAT_OPTIONS)
+    run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+    run_metadata = tf.RunMetadata()
+    return run_options, run_metadata
+
+def trace(run_metadata, logdir):
+    tl = timeline.Timeline(run_metadata.step_stats)
+    ctf = tl.generate_chrome_trace_format()
+    with open(os.path.join(logdir, 'timeline.json'), 'w') as f:
+        f.write(ctf)
 
 ################################################################################
 

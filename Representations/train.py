@@ -188,6 +188,7 @@ def main(_):
                         images=np.vstack(X))
 
     with tf.Session() as sess:
+        run_options, run_metadata = profile()
         writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                                  scope='representation'))
@@ -197,7 +198,8 @@ def main(_):
         for e in range(FLAGS.epochs):
             for _, batch_ims, batch_labels in batch(ims, labels, FLAGS.batchsize):
                 step, L, _ = sess.run([global_step, unsupervised_loss, pretrain_step],
-                                      {x: batch_ims, T: batch_labels})
+                                      {x: batch_ims, T: batch_labels},
+                                      options=run_options, run_metadata=run_metadata)
                 print('\rtrain step: {} loss: {:.5f}'.format(step, L), end='')
 
                 # semi-supervised learning
@@ -216,6 +218,9 @@ def main(_):
                     # freeze_pretrain(sess, writer, step)
                     validate(sess, writer, step, x, T, test_ims, test_labels,
                              FLAGS.batchsize, name='super')
+
+                if step == 30:
+                    trace(run_metadata, FLAGS.logdir)
 
                 # if step%10000==1:
                 #     embed(sess, step-1)

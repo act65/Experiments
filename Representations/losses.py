@@ -30,24 +30,25 @@ def nat(inputs, scale, name='noiseastargets'):
 
     """
     # TODO. try without using the matching algorithm!!!
+    # TODO. try with different distributions of noise?!
 
+    # NOTE. what is the effect of batch size? as with a larger batch it would be
+    # easier to find a closer target.
     def spherical_noise(shape):
-        # how to get uniformly distributed noise on a ball?
-        z = tf.random_uniform(shape=shape, dtype=tf.float32)
-        return z #/tf.reduce_mean(z, axis=-1)
+        with tf.name_scope('spherical_noise'):
+            z = tf.random_uniform(shape=shape, dtype=tf.float32)
+            return tf.nn.l2_normalize(z, -1)
 
     def hungarian_matching(h, z):
-        """
-        Hungarian matching algorithm. O(n^3)
+        """Hungarian matching algorithm. O(n^3)
 
         Alternative approaches.
         - could compile binary and add op
         https://github.com/tensorflow/tensorflow/pull/3780
         - could just wrap a python op. will be slower. (but easier)
-
-        Args:
-            h, z (tf.Tensor): dtype-tf.float32.
         """
+        M = munkres.Munkres()
+
         def get_pairings(C):
             """
             An implementation using munkres python library and py_wrap.
@@ -57,30 +58,25 @@ def nat(inputs, scale, name='noiseastargets'):
             Returns:
                 list: new pairings
             """
-            assignments = munkres.Munkres().compute(C)
+            # TODO. this is WAY TOO slow
+            assignments = M.compute(C)
             return np.array(zip(*assignments))
 
         def cost_fn(x, y):
-            return tf.reduce_mean((tf.expand_dims(h, 1) -
-                                   tf.expand_dims(y, -1))**2, axis=0)
+            with tf.name_scope('matching_cost'):
+                return tf.reduce_mean((tf.expand_dims(x, 0) -
+                                       tf.expand_dims(y, 1))**2, axis=2)
 
-        C = cost_fn(h , z)
-        idx = tf.py_func(get_pairings, [C], tf.int64)
-        idx = tf.reshape(idx, [2, tf.shape(h)[-1]])
-        return tf.gather(h, idx[0]), tf.gather(z, idx[1])
+        with tf.name_scope('matching'):
+            C = cost_fn(h , z)
+            idx = tf.py_func(get_pairings, [C], tf.int64)
+            idx = tf.reshape(idx, [2, tf.shape(h)[0]])
+            return tf.gather(h, idx[0]), tf.gather(z, idx[1])
 
     with tf.name_scope(name):
         z = spherical_noise(inputs.get_shape())
         features, targets = hungarian_matching(inputs, z)
         return scale*tf.reduce_mean(tf.square(features - targets))
-
-def mutual_info(inputs):
-    """
-    Noise as targets can be interpreted as optimising the mutual information
-    of ???
-    """
-    return None
-
 
 def siamese(inputs, scale):
     """
@@ -104,7 +100,6 @@ def siamese(inputs, scale):
 
         return loss_val
 
-
 def gan(inputs, scale):
     """
     We have no idea what type of regularisation is a good idea for unsupervised
@@ -112,7 +107,7 @@ def gan(inputs, scale):
     Instead can we learn the right function?
     Our true goal is: ??
     - easily discriminable datapoints (aka uniformly distributed?)
-    - disentangled representations (aka clustered?)
+    - disentangled representations (aka ??)
     - ?
     """
     with tf.name_scope(name):
@@ -136,7 +131,6 @@ def ae(inputs, scale, name='autoencoder'):
 
         return loss_val
 
-
 def kl(inputs, scale):
     """
     A weird idea. https://arxiv.org/abs/1705.00574
@@ -156,7 +150,6 @@ def kl(inputs, scale):
         loss_val = scale*tf.reduce_mean(tf.square(cond*similarities))
 
         return loss_val
-
 
 def orth(inputs, scale, normalise=False, summarise=True,
                            name='orthogonal_regulariser'):
