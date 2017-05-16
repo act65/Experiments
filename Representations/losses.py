@@ -111,6 +111,7 @@ def spaced(inputs, scale, name='equalspaced'):
 
         return loss_val
 
+# TODO. something like whta t-sne uses would be good?!
 def siamese(inputs, scale, name='siamese'):
     """
     Inputs that are similar should be mapped to outputs that are similar.
@@ -120,12 +121,15 @@ def siamese(inputs, scale, name='siamese'):
         x = tf.reduce_mean(tf.get_collection('inputs')[0], axis=[1,2])
         distances = pairwise_l2_dist(inputs, inputs)
         targets = pairwise_l2_dist(x, x)
-        return scale*tf.reduce_mean(tf.square(targets-distances))
+        return scale*tf.reduce_mean(tf.log(1+tf.abs(targets-distances)))
+        # should use some more like the opposite of x**2? kinda logistic?
+        # want a high loss untill very close.
 
 def cluster(inputs, scale, name='cluster'):
     """
     A loss that encourages close points to be closer.
     """
+
     with tf.name_scope(name):
         return 1
 
