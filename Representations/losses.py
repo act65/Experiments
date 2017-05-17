@@ -87,22 +87,30 @@ def nat(inputs, scale, normalise=True, name='noiseastargets'):
         return scale*tf.reduce_mean(tf.square(features - targets))
 
 def pairwise_l2_dist(x, y):
+    # could do this better. only need to calculate the upper/lower triangular?
     diff = tf.expand_dims(x, 0) - tf.expand_dims(y, 1)
     return tf.sqrt(1e-8+tf.reduce_mean(tf.square(diff), axis=-1))
 
-def spaced(inputs, scale, name='equalspaced'):
+def spaced(inputs, scale, name='spaced'):
     """
     Want each datapoint to be a distance of 1 away form every other datapoint.
+    We are regularising the density of points on the output space to be
+    of uniform density.
+
 
     Instead of running two networks side by side we can just split the batch
     into two parts achieving the same result.
     Or just use the whole rest of the batch?!
 
-    min sum_i sum_j 1-d(x_i, y_i))
+    min sum_i sum_j 1-d(x_i, y_i))  -- i!=j
     """
+    # NOTE. Uniform distance to batch_num of points gives us some sort of weird
+    # high dimensional polygon? Is it even possible to be uniformly spaced == 1
+    # for 50 points?
+    # NOTE. would prefer. a grid. am dist = 1 from my nearest neighbors.
 
     # NOTE. How is this and orthogonal regularisation different?
-    # But are minimising 1 - the distance between datapoints.
+    # Both are minimising 1 - distance between datapoints.
     with tf.name_scope(name):
         batch_size = tf.shape(inputs)[0]
         distances = pairwise_l2_dist(inputs, inputs)
@@ -111,17 +119,47 @@ def spaced(inputs, scale, name='equalspaced'):
 
         return loss_val
 
-# TODO. something like whta t-sne uses would be good?!
+def grid(inputs, scale, name='grid'):
+    """
+    Want each datapoint to be a distance of 1 away form its nearest neighbors.
+    We are regularising the density of points on the output space to be
+    of uniform density.
+    """
+    def bottom_k(x, k=1):
+        with tf.name_scope('bottom_k'):
+            d = tf.shape(x)[-1]
+            x = tf.reshape(x, [-1,d])
+            x += 1000*tf.eye(d) # hack to make sure not self-similar
+            x = -(x**2)  # use top k to get bottom k...
+            values, indices = tf.nn.top_k(x, k=k, sorted=False)
+            # indexing x is too painful. just cheat
+            return tf.sqrt(tf.abs(values) + 1e-8)
+
+    with tf.name_scope(name):
+        batch_size = tf.shape(inputs)[0]
+        distances = pairwise_l2_dist(inputs, inputs)
+        k_distances = bottom_k(distances, 4)  # local density
+        targets = tf.ones_like(k_distances)  # uniformly spaced
+        loss_val = scale*tf.reduce_mean(tf.square(targets-k_distances))
+        return loss_val
+
+
+# TODO. something like what t-sne uses would be good?!
 def siamese(inputs, scale, name='siamese'):
     """
     Inputs that are similar should be mapped to outputs that are similar.
     L2 doesnt seem like the right measure for this...
+
+    This has some pretty degenerate cases.
+    Translate an input
     """
     with tf.name_scope(name):
         x = tf.reduce_mean(tf.get_collection('inputs')[0], axis=[1,2])
+        # TODO. averaging over the spatial indexes when the number of features
+        # is only 1 doesnt make much sense... we are just matching the means?!
         distances = pairwise_l2_dist(inputs, inputs)
         targets = pairwise_l2_dist(x, x)
-        return scale*tf.reduce_mean(tf.log(1+tf.abs(targets-distances)))
+        return scale*tf.reduce_mean(tf.square(targets-distances))
         # should use some more like the opposite of x**2? kinda logistic?
         # want a high loss untill very close.
 

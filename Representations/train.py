@@ -223,9 +223,9 @@ def main(_):
                 if step == 30:
                     trace(run_metadata, FLAGS.logdir)
 
-                # if step%500 == 0:
-                #     var = tf.get_collection('random_vars')[0]
-                #     sess.run(tf.variables_initializer(var))
+                if step%500 == 0:
+                    var = tf.get_collection('random_vars')
+                    sess.run(tf.variables_initializer(var))
 
                 # if step%10000==1:
                 #     embed(sess, step-1)
