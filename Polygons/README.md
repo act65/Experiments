@@ -32,7 +32,7 @@ polygons have the same number of points, and are in the same order. `|| p - p' |
 * `L: f(poly') x mask -> loss`. We meed a differentiable mapping from polygons
 to masks (for use at training time) so we could minimise the
 jaccard loss between ground truth mask and generated mask (`min jaccard(D(p), mask)`)
-  *  construct a differentiable based on: [winding](), [interploation](),
+  * construct a differentiable based on: [winding](), [interploation](),
   * learn `min || D(p) - cv2.fillPoly(p) ||`
 
 
@@ -41,7 +41,8 @@ Analysis
   * the absolute positions of polygons are often arbitrary.
   * we often need different numbers of points for different shapes.
 * We are still training with masks which will be more expensive (although,
-  what is the difference between the sorts of information that we can get from the gradients?!)
+  what is the difference between the sorts of information that we can get from the gradients?!). However, it means that we do not nead labelled pairs. So we dont need
+  any target polygons, only masks.
 * The learned representation will not be as small, and it will not have the nice
  properties of polygons (which are?!?) (unless we have a seqential hidden space and regularised to look similar to polygons?!?)
 

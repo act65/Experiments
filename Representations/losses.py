@@ -8,6 +8,8 @@ def get_loss_fn(name, h):
         return siamese(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'spaced':
         return spaced(tf.reduce_mean(h, [1,2]), 1.0)
+    if name == 'grid':
+        return grid(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'orth':
         return orth(tf.reduce_mean(h, [1,2]), 1.0)
     if name == 'ae':
@@ -125,6 +127,8 @@ def grid(inputs, scale, name='grid'):
     We are regularising the density of points on the output space to be
     of uniform density.
     """
+    # TODO what about uniform spacing on the unit ball?
+    # this would make more sense as we are using matmul for the classifier.
     def bottom_k(x, k=1):
         with tf.name_scope('bottom_k'):
             d = tf.shape(x)[-1]
