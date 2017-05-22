@@ -1,0 +1,9 @@
+fish evaluate.fish eval0 0.01 16
+fish evaluate.fish eval1 0.01 64
+fish evaluate.fish eval2 0.01 256
+fish evaluate.fish eval3 0.001 16
+fish evaluate.fish eval4 0.001 64
+fish evaluate.fish eval5 0.001 256
+fish evaluate.fish eval6 0.0001 16
+fish evaluate.fish eval7 0.0001 64
+fish evaluate.fish eval8 0.0001 256
