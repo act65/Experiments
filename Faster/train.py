@@ -51,7 +51,7 @@ def main(_):
     print(loss)
     opt = tf.train.AdamOptimizer(FLAGS.lr)
     gnvs = unaggregated_grads_and_vars(loss, tf.trainable_variables())
-    gnvs = [principle_engienvector(g, v) for g, v in gnvs]
+    gnvs = [principle_engienvectors(g, v) for g, v in gnvs]
     # gnvs = [tf.clip(g, ?, ?), v for g, v in gnvs]
 
     train_step = opt.apply_gradients(gnvs)

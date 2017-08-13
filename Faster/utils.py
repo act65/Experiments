@@ -3,7 +3,7 @@ from __future__ import print_function
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 
-# from sklearn.utils import shuffle
+from sklearn.utils import shuffle
 
 def net(x, width, depth):
     with slim.arg_scope([slim.fully_connected],
@@ -16,7 +16,7 @@ def net(x, width, depth):
 ################################################################################
 
 def batch(ims, labels, batchsize):
-    # ims, labels = shuffle(ims, labels)
+    ims, labels = shuffle(ims, labels)
     shape = ims.shape
     for i in range(len(labels)//batchsize):
         yield (i, ims[i*batchsize:(i+1)*batchsize, ...],
@@ -48,8 +48,23 @@ def get_loss_fn(name, logits):
 
 ################################################################################
 
+def project(a, b):
+    """
+    Take only the component of the mean gradient along the principle eigen value.
+    """
+    # project a onto b
+    if len(a.get_shape().as_list()) == 1:
+        a = tf.expand_dims(a, 1)
+    if len(b.get_shape().as_list()) == 1:
+        b = tf.expand_dims(b, 1)
+    return tf.matmul(a, b, transpose_b=True) * a / tf.square(tf.norm(a))
 
-def principle_engienvector(grad, var):
+def principle_engienvectors(grad, var, r=1):
+    """
+    We dont necessarily need to all of these compute these every time.
+    Could keep an online estimate of the eigenvalues?
+    """
+    mean = tf.reduce_mean(grad, axis=0)
     var_shape = var.get_shape().as_list()
     s, u, v = tf.svd(grad)
 
@@ -59,10 +74,16 @@ def principle_engienvector(grad, var):
         v = tf.transpose(v, [1, 0])
     elif len(v_shape) == 3:
         v = tf.transpose(v, [0, 2, 1])
+    else:
+        raise SystemError
 
     # pick the strongest component
-    v = v[0, ...]
-    u = u[0, ...]
+    # TODO. does the scaling by eigenvalues actually work?
+    v = tf.reduce_mean(tf.expand_dims(s[0:r], -1)*v[0:r, ...], axis=0)
+    v = project(mean, v)
+    u = tf.reduce_mean(tf.expand_dims(s[0:r], 1)*u[0:r, ...], axis=0)
+    u = project(mean, u)
+    print(u, v, var)
 
     if v.get_shape().as_list() == var_shape:
         return v, var
