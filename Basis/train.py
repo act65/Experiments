@@ -37,7 +37,12 @@ class BasisLayer(snt.AbstractModule):
 
     def _build(self, inputs):
         outputs = self.U(self.S * self.V_T(inputs)) + self.bias
-        return tf.nn.relu(outputs)
+        # TODO want to add self normalising elus?
+        return tf.nn.elu(outputs)
+
+def selu(x):
+    return tf.nn.elu(x)
+
 
 class Basis(snt.AbstractModule):
     def __init__(self, shape, weights=None, name='basis'):
@@ -56,15 +61,18 @@ class Basis(snt.AbstractModule):
         return Basis(tuple(reversed(self.shape)), tf.transpose(self.weights))
 
 def network(x, dim, rank, depth):
+    # dont train the first layer
+    first = snt.Sequential([snt.Linear(dim), tf.nn.elu])
+    x = first(x)
 
-    first = snt.Sequential([snt.Linear(dim), tf.nn.relu])
-    last = snt.Linear(10)
-    U = Basis((rank, dim))
+    with tf.variable_scope('train_vars'):
+        U = Basis((rank, dim))
+        layers = [BasisLayer(U) for _ in range(depth)]
+        net = snt.Sequential(layers)
+        y = net(x)
 
-    layers = [BasisLayer(U) for _ in range(depth)]
-    net = snt.Sequential([first] + layers + [last])
-
-    return net(x)
+        last = snt.Linear(10)
+        return last(y)
 
 def main(_):
     mnist = input_data.read_data_sets(FLAGS.datadir, one_hot=False)
@@ -86,10 +94,12 @@ def main(_):
 
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=T)
     print(loss)
-    train_step = tf.train.AdamOptimizer(FLAGS.lr).minimize(loss)
+    trainable_vars = tf.get_collection('trainable_variables', scope='train_vars')
+    train_step = tf.train.AdamOptimizer(FLAGS.lr).minimize(loss,
+       var_list=trainable_vars)
 
     num_vars = np.sum([np.prod(v.get_shape().as_list())
-                       for v in tf.trainable_variables()])
+                       for v in trainable_vars])
     print('number of variables: {}'.format(num_vars))
 
     with tf.name_scope('metrics'):
@@ -101,7 +111,7 @@ def main(_):
     loss_summary = tf.summary.scalar('supervised', tf.reduce_mean(loss))
 
     with tf.Session() as sess:
-        writer = tf.summary.FileWriter(FLAGS.logdir, sess.graph)
+        writer = tf.summary.FileWriter(FLAGS.logdir+'-{}'.format(num_vars), sess.graph)
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
 
